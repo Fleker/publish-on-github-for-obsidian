@@ -401,9 +401,9 @@ export default class PublishPlugin extends Plugin {
     const emptyLineRegex = new RegExp('^\\s*' + escapeRegExp(tagToStrip) + '\\s*$', 'mg');
     let cleanBody = processed.replace(emptyLineRegex, '');
     
-    // 2. Strip inline occurrences of the tag
-    const inlineTagRegex = new RegExp('(?<=^|\\s)' + escapeRegExp(tagToStrip) + '(?=\\s|[,.;!?]|$)', 'g');
-    cleanBody = cleanBody.replace(inlineTagRegex, '');
+    // 2. Strip inline occurrences of the tag without lookbehind
+    const inlineTagRegex = new RegExp('(^|\\s)' + escapeRegExp(tagToStrip) + '(\\s|[,.;!?]|$)', 'g');
+    cleanBody = cleanBody.replace(inlineTagRegex, '$1$2');
 
     // Badge Renderer (exclude design metadata)
     const excludedProperties = ['layout', 'title', 'position', 'permalink'];
@@ -515,10 +515,8 @@ class PublishSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl('h2', { text: 'Publish on GitHub Settings' });
-
     new Setting(containerEl)
-      .setName('Publish Tag')
+      .setName('Publish tag')
       .setDesc('Only notes with this tag in body or frontmatter will be published.')
       .addText(text =>
         text
@@ -531,7 +529,7 @@ class PublishSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Site Title')
+      .setName('Site title')
       .setDesc('Title of your published website (e.g. My Public Notes)')
       .addText(text =>
         text
@@ -544,7 +542,7 @@ class PublishSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Site Subtitle')
+      .setName('Site subtitle')
       .setDesc('Subtitle/brand of your published website (e.g. Digital Garden)')
       .addText(text =>
         text
@@ -557,7 +555,7 @@ class PublishSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Local Repository Path')
+      .setName('Local repository path')
       .setDesc('Local directory where the Git clone lives. (Use an absolute Windows path if on Windows)')
       .addText(text =>
         text
@@ -583,7 +581,7 @@ class PublishSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('Target Branch')
+      .setName('Target branch')
       .setDesc('Default branch to push files to (e.g. main or gh-pages)')
       .addText(text =>
         text
@@ -596,7 +594,7 @@ class PublishSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName('GitHub Repo Path (Optional)')
+      .setName('GitHub repository path (optional)')
       .setDesc('Format: username/repo (for content feedback links). Auto-parsed if blank.')
       .addText(text =>
         text
@@ -610,7 +608,7 @@ class PublishSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Run Git via WSL')
-      .setDesc('Toggle this ON if you want the plugin to delegate git actions to WSL bash.')
+      .setDesc('Toggle this ON if you want the plugin to delegate Git actions to WSL bash.')
       .addToggle(toggle =>
         toggle
           .setValue(this.plugin.settings.useWsl)
@@ -623,7 +621,7 @@ class PublishSettingTab extends PluginSettingTab {
     containerEl.createEl('h3', { text: 'Maintenance & Actions' });
 
     new Setting(containerEl)
-      .setName('Initialize Jekyll Theme Templates')
+      .setName('Initialize Jekyll theme templates')
       .setDesc('Generates index, layouts, styles, and workflows in the local repository.')
       .addButton(cb => {
         cb.setButtonText("Initialize Theme");
@@ -633,7 +631,7 @@ class PublishSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName('Reset Local Repository')
+      .setName('Reset local repository')
       .setDesc('⚠️ WARNING: Deletes the entire local repository folder and performs a fresh clone and theme setup.')
       .addButton(cb => {
         cb.setButtonText("Reset Repo");

@@ -850,8 +850,8 @@ ${uniqueBroken.slice(0, 5).join("\n")}${uniqueBroken.length > 5 ? "\n...and more
     const tagToStrip = this.settings.publishTag;
     const emptyLineRegex = new RegExp("^\\s*" + escapeRegExp(tagToStrip) + "\\s*$", "mg");
     let cleanBody = processed.replace(emptyLineRegex, "");
-    const inlineTagRegex = new RegExp("(?<=^|\\s)" + escapeRegExp(tagToStrip) + "(?=\\s|[,.;!?]|$)", "g");
-    cleanBody = cleanBody.replace(inlineTagRegex, "");
+    const inlineTagRegex = new RegExp("(^|\\s)" + escapeRegExp(tagToStrip) + "(\\s|[,.;!?]|$)", "g");
+    cleanBody = cleanBody.replace(inlineTagRegex, "$1$2");
     const excludedProperties = ["layout", "title", "position", "permalink"];
     const badges = [];
     for (const [k, v] of Object.entries(frontmatter)) {
@@ -936,26 +936,25 @@ var PublishSettingTab = class extends import_obsidian2.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Publish on GitHub Settings" });
-    new import_obsidian2.Setting(containerEl).setName("Publish Tag").setDesc("Only notes with this tag in body or frontmatter will be published.").addText(
+    new import_obsidian2.Setting(containerEl).setName("Publish tag").setDesc("Only notes with this tag in body or frontmatter will be published.").addText(
       (text) => text.setPlaceholder("#public").setValue(this.plugin.settings.publishTag).onChange(async (value) => {
         this.plugin.settings.publishTag = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Site Title").setDesc("Title of your published website (e.g. My Public Notes)").addText(
+    new import_obsidian2.Setting(containerEl).setName("Site title").setDesc("Title of your published website (e.g. My Public Notes)").addText(
       (text) => text.setPlaceholder("My Public Notes").setValue(this.plugin.settings.siteTitle).onChange(async (value) => {
         this.plugin.settings.siteTitle = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Site Subtitle").setDesc("Subtitle/brand of your published website (e.g. Digital Garden)").addText(
+    new import_obsidian2.Setting(containerEl).setName("Site subtitle").setDesc("Subtitle/brand of your published website (e.g. Digital Garden)").addText(
       (text) => text.setPlaceholder("Digital Garden").setValue(this.plugin.settings.siteSubtitle).onChange(async (value) => {
         this.plugin.settings.siteSubtitle = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Local Repository Path").setDesc("Local directory where the Git clone lives. (Use an absolute Windows path if on Windows)").addText(
+    new import_obsidian2.Setting(containerEl).setName("Local repository path").setDesc("Local directory where the Git clone lives. (Use an absolute Windows path if on Windows)").addText(
       (text) => text.setPlaceholder("C:\\path\\to\\git-repo").setValue(this.plugin.settings.localRepoPath).onChange(async (value) => {
         this.plugin.settings.localRepoPath = value;
         await this.plugin.saveSettings();
@@ -967,32 +966,32 @@ var PublishSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Target Branch").setDesc("Default branch to push files to (e.g. main or gh-pages)").addText(
+    new import_obsidian2.Setting(containerEl).setName("Target branch").setDesc("Default branch to push files to (e.g. main or gh-pages)").addText(
       (text) => text.setPlaceholder("main").setValue(this.plugin.settings.mainBranch).onChange(async (value) => {
         this.plugin.settings.mainBranch = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("GitHub Repo Path (Optional)").setDesc("Format: username/repo (for content feedback links). Auto-parsed if blank.").addText(
+    new import_obsidian2.Setting(containerEl).setName("GitHub repository path (optional)").setDesc("Format: username/repo (for content feedback links). Auto-parsed if blank.").addText(
       (text) => text.setPlaceholder("username/repo").setValue(this.plugin.settings.githubRepo).onChange(async (value) => {
         this.plugin.settings.githubRepo = value;
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian2.Setting(containerEl).setName("Run Git via WSL").setDesc("Toggle this ON if you want the plugin to delegate git actions to WSL bash.").addToggle(
+    new import_obsidian2.Setting(containerEl).setName("Run Git via WSL").setDesc("Toggle this ON if you want the plugin to delegate Git actions to WSL bash.").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.useWsl).onChange(async (value) => {
         this.plugin.settings.useWsl = value;
         await this.plugin.saveSettings();
       })
     );
     containerEl.createEl("h3", { text: "Maintenance & Actions" });
-    new import_obsidian2.Setting(containerEl).setName("Initialize Jekyll Theme Templates").setDesc("Generates index, layouts, styles, and workflows in the local repository.").addButton((cb) => {
+    new import_obsidian2.Setting(containerEl).setName("Initialize Jekyll theme templates").setDesc("Generates index, layouts, styles, and workflows in the local repository.").addButton((cb) => {
       cb.setButtonText("Initialize Theme");
       cb.onClick(() => {
         this.plugin.initializeJekyllTheme();
       });
     });
-    new import_obsidian2.Setting(containerEl).setName("Reset Local Repository").setDesc("\u26A0\uFE0F WARNING: Deletes the entire local repository folder and performs a fresh clone and theme setup.").addButton((cb) => {
+    new import_obsidian2.Setting(containerEl).setName("Reset local repository").setDesc("\u26A0\uFE0F WARNING: Deletes the entire local repository folder and performs a fresh clone and theme setup.").addButton((cb) => {
       cb.setButtonText("Reset Repo");
       cb.setWarning(true);
       cb.onClick(() => {
