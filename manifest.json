@@ -1,0 +1,10 @@
+{
+  "id": "publish-git",
+  "name": "Publish on GitHub",
+  "version": "1.0.0",
+  "minAppVersion": "1.5.0",
+  "description": "Publish selective notes marked with a tag (e.g. #public) to a Git repository hosting Jekyll.",
+  "author": "Nick",
+  "authorUrl": "https://github.com",
+  "isDesktopOnly": true
+}

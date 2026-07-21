@@ -1,0 +1,18 @@
+title: "${SITE_TITLE}"
+subtitle: "${SITE_SUBTITLE}"
+description: "A digital garden compiled directly from my Obsidian vault."
+github_repo: "${GITHUB_REPO}"
+publish_tag: "${PUBLISH_TAG}"
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor/
+  - .github/
+
+relative_links:
+  enabled: false

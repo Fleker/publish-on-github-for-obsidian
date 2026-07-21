@@ -1,0 +1,10 @@
+{
+  "publishTag": "#public",
+  "localRepoPath": "/mnt/c/Users/handn/Development/obsidian-dev/knowledge",
+  "remoteRepoUrl": "git@github.com:Fleker/obsidian-knowledge.git",
+  "mainBranch": "main",
+  "useWsl": true,
+  "githubRepo": "fleker/obsidian-knowledge",
+  "siteTitle": "Knowledge",
+  "siteSubtitle": "Knowledge"
+}

@@ -1,0 +1,5 @@
+# Publish Obsidian
+
+This is an Obsidian plugin. I want to tag selective files as (#public) or configurable. With a prompt command, the plugin will find all appropriately tagged files and copy them to a temporary git repository. The system will have settings for the tag and git commands (and whether to jump into WSL). The system will use the git cli to add files, generate a commit message showing the additions, removals, and changes. The goal is to upload these to a github repo and use the GitHub pages to host them. We'll want a jeykll theme with a table of contents jumper on the right-hand side and a total list of files on the left-hand side for easy navigation. Issues with the content should be reportable as a GitHub issue. This process may also need a GitHub action? There should be a step to initialize all of these things (and maybe a way to migrate if these core things change). By using a tmp directory, I think it should make it possible to do a clean install (even if it means this can only be one way).
+
+Before proceeding, let's make sure I'm not missing anything.

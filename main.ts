@@ -1,0 +1,646 @@
+import {
+  App,
+  Plugin,
+  PluginSettingTab,
+  Setting,
+  TFile,
+  FileSystemAdapter
+} from 'obsidian';
+import * as path from 'path';
+import * as fs from 'fs';
+
+import { LogNotice as Notice } from './utils';
+import { GitService } from './git-service';
+import { ThemeService } from './theme-service';
+
+interface PublishSettings {
+  publishTag: string;
+  localRepoPath: string;
+  remoteRepoUrl: string;
+  mainBranch: string;
+  useWsl: boolean;
+  githubRepo: string; // e.g. "username/repo"
+  siteTitle: string;
+  siteSubtitle: string;
+}
+
+const DEFAULT_SETTINGS: PublishSettings = {
+  publishTag: '#public',
+  localRepoPath: '',
+  remoteRepoUrl: '',
+  mainBranch: 'main',
+  useWsl: false,
+  githubRepo: '',
+  siteTitle: 'My Public Notes',
+  siteSubtitle: 'Digital Garden'
+};
+
+export default class PublishPlugin extends Plugin {
+  settings: PublishSettings;
+  gitService: GitService;
+  themeService: ThemeService;
+
+  async onload() {
+    await this.loadSettings();
+
+    // Instantiate modular services
+    this.gitService = new GitService(() => ({
+      useWsl: this.settings.useWsl,
+      mainBranch: this.settings.mainBranch
+    }));
+    this.themeService = new ThemeService();
+
+    // Register ribbon icon
+    this.addRibbonIcon('share-2', 'Publish Public Notes', () => {
+      this.publishNotes();
+    });
+
+    // Register commands
+    this.addCommand({
+      id: 'publish-public-notes',
+      name: 'Publish Public Notes',
+      callback: () => this.publishNotes()
+    });
+
+    this.addCommand({
+      id: 'initialize-jekyll-site',
+      name: 'Initialize Jekyll Theme Templates',
+      callback: () => this.initializeJekyllTheme()
+    });
+
+    this.addCommand({
+      id: 'reset-local-repository',
+      name: 'Reset Local Git Repository',
+      callback: () => this.resetLocalRepo()
+    });
+
+    // Add settings tab
+    this.addSettingTab(new PublishSettingTab(this.app, this));
+  }
+
+  async loadSettings() {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+  }
+
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
+
+  // Wrapper for theme initialization
+  async initializeJekyllTheme() {
+    // Parse Github username/repo from URL if not specified
+    if (!this.settings.githubRepo && this.settings.remoteRepoUrl) {
+      const repoUrl = this.settings.remoteRepoUrl;
+      const match = repoUrl.match(/github\.com[:/]([^/]+)\/([^.]+)/);
+      if (match) {
+        this.settings.githubRepo = `${match[1]}/${match[2]}`;
+        await this.saveSettings();
+      }
+    }
+
+    await this.themeService.initializeJekyllTheme(
+      this.settings.localRepoPath,
+      this.settings.githubRepo,
+      this.settings.mainBranch,
+      this.settings.siteTitle,
+      this.settings.siteSubtitle,
+      this.settings.publishTag
+    );
+  }
+
+  // Wipe local repository directory entirely and re-clone/reset
+  async resetLocalRepo() {
+    const repoPath = this.settings.localRepoPath;
+    if (!repoPath) {
+      new Notice("Configure Local Repository Path in Settings first!");
+      return;
+    }
+
+    try {
+      if (fs.existsSync(repoPath)) {
+        new Notice("Wiping local directory...");
+        await fs.promises.rm(repoPath, { recursive: true, force: true });
+      }
+      const vaultPath = this.app.vault.adapter instanceof FileSystemAdapter ? this.app.vault.adapter.getBasePath() : '';
+      const success = await this.gitService.checkAndInitGitRepo(repoPath, this.settings.remoteRepoUrl, vaultPath);
+      if (success) {
+        new Notice("Local Git repository wiped and re-initialized!");
+        await this.initializeJekyllTheme();
+      }
+    } catch (err) {
+      new Notice("Reset Error: " + err.message);
+    }
+  }
+
+  // Clean out previous markdown and asset files in the repo (preserving .git, layouts, configs)
+  async clearOldFiles() {
+    const repoPath = this.settings.localRepoPath;
+    if (!fs.existsSync(repoPath)) return;
+
+    const files = await fs.promises.readdir(repoPath);
+    for (const file of files) {
+      // Keep Git, Jekyll structure, and configuration files
+      if (
+        file === '.git' ||
+        file === '.github' ||
+        file === '_layouts' ||
+        file === '_includes' ||
+        file === 'assets' ||
+        file === '_config.yml' ||
+        file === 'Gemfile' ||
+        file === 'Gemfile.lock' ||
+        file === 'commit-msg.txt'
+      ) {
+        continue;
+      }
+
+      const fullPath = path.join(repoPath, file);
+      const stat = await fs.promises.stat(fullPath);
+      if (stat.isDirectory()) {
+        await fs.promises.rm(fullPath, { recursive: true, force: true });
+      } else {
+        await fs.promises.rm(fullPath, { force: true });
+      }
+    }
+  }
+
+  // Principal function to gather public files, process wikilinks, handle assets, diff, commit and push
+  async publishNotes() {
+    const activeNotice = new Notice("Starting Publish Pipeline...", 0);
+
+    const vaultPath = this.app.vault.adapter instanceof FileSystemAdapter ? this.app.vault.adapter.getBasePath() : '';
+    const isGitReady = await this.gitService.checkAndInitGitRepo(
+      this.settings.localRepoPath,
+      this.settings.remoteRepoUrl,
+      vaultPath
+    );
+    if (!isGitReady) {
+      activeNotice.hide();
+      return;
+    }
+
+    const tagToFind = this.settings.publishTag;
+    const repoPath = this.settings.localRepoPath;
+
+    activeNotice.setMessage("Scanning Obsidian Vault for public notes...");
+
+    // Gather public files
+    const allFiles = this.app.vault.getMarkdownFiles();
+    const publicFilesSet = new Set<string>();
+    const publicTFiles: TFile[] = [];
+
+    for (const file of allFiles) {
+      const cache = this.app.metadataCache.getFileCache(file);
+      let isPublic = false;
+
+      // Check inline tags
+      if (cache?.tags) {
+        for (const t of cache.tags) {
+          if (t.tag === tagToFind) {
+            isPublic = true;
+            break;
+          }
+        }
+      }
+
+      // Check frontmatter tags
+      if (!isPublic && cache?.frontmatter) {
+        const tagsProp = cache.frontmatter.tags || cache.frontmatter.tag;
+        if (tagsProp) {
+          if (Array.isArray(tagsProp)) {
+            if (tagsProp.some(t => t === tagToFind.replace('#', '') || t === tagToFind)) {
+              isPublic = true;
+            }
+          } else if (typeof tagsProp === 'string') {
+            const splitTags = tagsProp.split(/[\s,]+/);
+            if (splitTags.some(t => t === tagToFind.replace('#', '') || t === tagToFind)) {
+              isPublic = true;
+            }
+          }
+        }
+      }
+
+      if (isPublic) {
+        publicFilesSet.add(file.path);
+        publicTFiles.push(file);
+      }
+    }
+
+    if (publicTFiles.length === 0) {
+      activeNotice.hide();
+      new Notice(`No files found with the tag "${tagToFind}"!`);
+      return;
+    }
+
+    activeNotice.setMessage(`Found ${publicTFiles.length} public notes. Syncing files...`);
+
+    try {
+      // Clear old synced files
+      await this.clearOldFiles();
+
+      const brokenLinks: { source: string; target: string }[] = [];
+      const referencedAssets = new Set<string>();
+
+      // Read and process each public file
+      for (const file of publicTFiles) {
+        const rawContent = await this.app.vault.read(file);
+
+        // Process Frontmatter and render HTML badges
+        const { processedContent } = this.processFrontmatter(rawContent, file.basename);
+
+        // Convert Wikilinks and track embedded images
+        const finalContent = this.convertLinksAndEmbeds(processedContent, file, publicFilesSet, brokenLinks, referencedAssets);
+
+        // Write to target repository preserving path tree
+        const targetPath = path.join(repoPath, file.path);
+        const targetDir = path.dirname(targetPath);
+
+        if (!fs.existsSync(targetDir)) {
+          await fs.promises.mkdir(targetDir, { recursive: true });
+        }
+
+        await fs.promises.writeFile(targetPath, finalContent, 'utf8');
+      }
+
+      // Handle asset/image replication
+      if (referencedAssets.size > 0) {
+        activeNotice.setMessage(`Syncing ${referencedAssets.size} images...`);
+        const targetAssetsDir = path.join(repoPath, 'assets', 'images');
+        if (!fs.existsSync(targetAssetsDir)) {
+          await fs.promises.mkdir(targetAssetsDir, { recursive: true });
+        }
+
+        const vaultAdapter = this.app.vault.adapter;
+        if (vaultAdapter instanceof FileSystemAdapter) {
+          const basePath = vaultAdapter.getBasePath();
+
+          for (const assetPath of referencedAssets) {
+            const fullSourcePath = path.join(basePath, assetPath);
+            if (fs.existsSync(fullSourcePath)) {
+              const fileStat = await fs.promises.stat(fullSourcePath);
+              if (fileStat.isFile()) {
+                const ext = path.extname(assetPath);
+                const name = path.basename(assetPath, ext);
+                const targetAssetPath = path.join(targetAssetsDir, `${name}${ext}`);
+                await fs.promises.copyFile(fullSourcePath, targetAssetPath);
+              }
+            }
+          }
+        }
+      }
+
+      // Ensure we have an index.md fallback in the repository root if none was copied from the vault
+      await this.themeService.ensureFallbackIndex(repoPath);
+
+      // Display warning for broken links
+      if (brokenLinks.length > 0) {
+        const uniqueBroken = Array.from(new Set(brokenLinks.map(b => `${path.basename(b.source)} ➔ ${path.basename(b.target)}`)));
+        new Notice(`⚠️ Broken links warning! The following public notes link to private ones:\n\n${uniqueBroken.slice(0, 5).join('\n')}${uniqueBroken.length > 5 ? '\n...and more' : ''}`, 10000);
+      }
+
+      // Commit and Push via Git
+      activeNotice.setMessage("Checking Git changes...");
+
+      const porcelainStatus = await this.gitService.runCommand("git status --porcelain", repoPath);
+
+      if (!porcelainStatus.trim()) {
+        activeNotice.hide();
+        new Notice("No changes detected since last publish!");
+        return;
+      }
+
+      // Parse status to build detailed commit body
+      const added: string[] = [];
+      const modified: string[] = [];
+      const deleted: string[] = [];
+
+      const statusLines = porcelainStatus.split('\n');
+      for (const line of statusLines) {
+        if (!line.trim()) continue;
+        const statusCode = line.substring(0, 2);
+        const filePath = line.substring(3).trim().replace(/^"|"$/g, '');
+
+        if (statusCode.includes('A') || statusCode.includes('?')) {
+          added.push(filePath);
+        } else if (statusCode.includes('M') || statusCode.includes('R')) {
+          modified.push(filePath);
+        } else if (statusCode.includes('D')) {
+          deleted.push(filePath);
+        }
+      }
+
+      activeNotice.setMessage(`Staging changes (Added: ${added.length}, Modified: ${modified.length}, Deleted: ${deleted.length})...`);
+      
+      await this.gitService.commitAndPush(repoPath, added, modified, deleted);
+
+      activeNotice.hide();
+      new Notice(`Successfully Published! Added: ${added.length}, Modified: ${modified.length}, Removed: ${deleted.length}`);
+    } catch (err) {
+      activeNotice.hide();
+      new Notice("Publish Failure: " + err.message);
+      console.error(err);
+    }
+  }
+
+  // Standard Frontmatter extractor & badge pre-pender with automatic publish-tag stripping
+  processFrontmatter(content: string, title: string): { processedContent: string, properties: Record<string, string> } {
+    let processed = content;
+    let frontmatter: Record<string, any> = {};
+
+    const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
+    if (match) {
+      const rawYaml = match[1];
+      const lines = rawYaml.split('\n');
+      for (const line of lines) {
+        const colonIndex = line.indexOf(':');
+        if (colonIndex > 0) {
+          const key = line.substring(0, colonIndex).trim();
+          const val = line.substring(colonIndex + 1).trim();
+          let cleanVal = val.replace(/^["']|["']$/g, '');
+
+          // Strip the publish tag from tags frontmatter list so it is not rendered as a badge
+          if (key === 'tags' || key === 'tag') {
+            const targetTag = this.settings.publishTag.replace('#', '').toLowerCase();
+            const targetTagWithHash = ('#' + targetTag);
+            
+            const tags = cleanVal
+              .replace(/^\[|\]$/g, '') // remove brackets
+              .split(/[\s,]+/)         // split by comma/space
+              .map(t => t.trim().toLowerCase())
+              .filter(t => t && t !== targetTag && t !== targetTagWithHash);
+            
+            if (tags.length > 0) {
+              cleanVal = `[${tags.join(', ')}]`;
+            } else {
+              continue; // Skip this tags property completely if it only contained the publish tag
+            }
+          }
+
+          frontmatter[key] = cleanVal;
+        }
+      }
+      processed = content.substring(match[0].length);
+    }
+
+    // Default Jekyll fields
+    frontmatter['layout'] = 'default';
+    frontmatter['title'] = frontmatter['title'] || title;
+
+    // Compile yaml back for Jekyll
+    let yamlStr = '---\n';
+    for (const [k, v] of Object.entries(frontmatter)) {
+      yamlStr += `${k}: "${v}"\n`;
+    }
+    yamlStr += '---\n';
+
+    // Strip inline publish tag from body content to hide it on the web page
+    const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const tagToStrip = this.settings.publishTag;
+    
+    // 1. Strip from lines where the tag is the only content
+    const emptyLineRegex = new RegExp('^\\s*' + escapeRegExp(tagToStrip) + '\\s*$', 'mg');
+    let cleanBody = processed.replace(emptyLineRegex, '');
+    
+    // 2. Strip inline occurrences of the tag
+    const inlineTagRegex = new RegExp('(?<=^|\\s)' + escapeRegExp(tagToStrip) + '(?=\\s|[,.;!?]|$)', 'g');
+    cleanBody = cleanBody.replace(inlineTagRegex, '');
+
+    // Badge Renderer (exclude design metadata)
+    const excludedProperties = ['layout', 'title', 'position', 'permalink'];
+    const badges: string[] = [];
+    for (const [k, v] of Object.entries(frontmatter)) {
+      if (!excludedProperties.includes(k) && v) {
+        badges.push(`<span class="badge badge-${k}" style="background-color: var(--badge-bg); color: var(--badge-color); border: 1px solid var(--badge-border); padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 500; font-family: system-ui, -apple-system, sans-serif;">${k}: ${v}</span>`);
+      }
+    }
+
+    let badgesHtml = '';
+    if (badges.length > 0) {
+      badgesHtml = `<div class="content-badges" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px;">\n  ${badges.join('\n  ')}\n</div>\n\n`;
+    }
+
+    return {
+      processedContent: yamlStr + badgesHtml + cleanBody,
+      properties: frontmatter
+    };
+  }
+
+  // Regular expression link parser & relative route mapping
+  convertLinksAndEmbeds(
+    content: string,
+    sourceFile: TFile,
+    publicFiles: Set<string>,
+    brokenLinks: { source: string; target: string }[],
+    referencedAssets: Set<string>
+  ): string {
+    // 1. Convert embeds (e.g. images)
+    let processed = content.replace(/!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match, linkpath, label) => {
+      const dest = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourceFile.path);
+      if (!dest) return match;
+
+      const isImage = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'].includes(dest.extension.toLowerCase());
+      if (isImage) {
+        const sourceDir = path.dirname(sourceFile.path);
+        const depth = sourceDir === '.' ? 0 : sourceDir.split('/').length;
+        let prefix = '';
+        for (let i = 0; i < depth; i++) {
+          prefix += '../';
+        }
+        const targetUrl = `${prefix}assets/images/${dest.basename}.${dest.extension}`;
+        referencedAssets.add(dest.path);
+        return `![${label || dest.basename}](${targetUrl})`;
+      }
+      return match;
+    });
+
+    // 2. Convert standard wikilinks
+    processed = processed.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match, linkpath, label) => {
+      const dest = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourceFile.path);
+      if (!dest) return match;
+
+      if (!publicFiles.has(dest.path)) {
+        brokenLinks.push({ source: sourceFile.path, target: dest.path });
+        return `<span class="private-link" title="This page is private" style="color: #94a3b8; cursor: not-allowed; text-decoration: dashed underline;">${label || dest.basename}</span>`;
+      }
+
+      const sourceDir = path.dirname(sourceFile.path);
+      const destDir = path.dirname(dest.path);
+
+      let relativePath = '';
+      if (sourceDir === destDir) {
+        relativePath = `./${dest.basename}.md`;
+      } else {
+        const sourceParts = sourceDir === '.' ? [] : sourceDir.split('/');
+        const destParts = destDir === '.' ? [] : destDir.split('/');
+
+        let commonCount = 0;
+        while (
+          commonCount < sourceParts.length &&
+          commonCount < destParts.length &&
+          sourceParts[commonCount] === destParts[commonCount]
+        ) {
+          commonCount++;
+        }
+
+        let parents = '';
+        for (let i = commonCount; i < sourceParts.length; i++) {
+          parents += '../';
+        }
+
+        let destSub = destParts.slice(commonCount).join('/');
+        if (destSub) {
+          destSub += '/';
+        }
+
+        relativePath = `${parents}${destSub}${dest.basename}.md`;
+      }
+
+      return `[${label || dest.basename}](${encodeURI(relativePath)})`;
+    });
+
+    return processed;
+  }
+}
+
+// Plugin Settings Tab UI class
+class PublishSettingTab extends PluginSettingTab {
+  plugin: PublishPlugin;
+
+  constructor(app: App, plugin: PublishPlugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
+  display(): void {
+    const { containerEl } = this;
+    containerEl.empty();
+
+    containerEl.createEl('h2', { text: 'Publish on GitHub Settings' });
+
+    new Setting(containerEl)
+      .setName('Publish Tag')
+      .setDesc('Only notes with this tag in body or frontmatter will be published.')
+      .addText(text =>
+        text
+          .setPlaceholder('#public')
+          .setValue(this.plugin.settings.publishTag)
+          .onChange(async value => {
+            this.plugin.settings.publishTag = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Site Title')
+      .setDesc('Title of your published website (e.g. My Public Notes)')
+      .addText(text =>
+        text
+          .setPlaceholder('My Public Notes')
+          .setValue(this.plugin.settings.siteTitle)
+          .onChange(async value => {
+            this.plugin.settings.siteTitle = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Site Subtitle')
+      .setDesc('Subtitle/brand of your published website (e.g. Digital Garden)')
+      .addText(text =>
+        text
+          .setPlaceholder('Digital Garden')
+          .setValue(this.plugin.settings.siteSubtitle)
+          .onChange(async value => {
+            this.plugin.settings.siteSubtitle = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Local Repository Path')
+      .setDesc('Local directory where the Git clone lives. (Use an absolute Windows path if on Windows)')
+      .addText(text =>
+        text
+          .setPlaceholder('C:\\path\\to\\git-repo')
+          .setValue(this.plugin.settings.localRepoPath)
+          .onChange(async value => {
+            this.plugin.settings.localRepoPath = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Remote Git URL')
+      .setDesc('Your target GitHub repository clone URL.')
+      .addText(text =>
+        text
+          .setPlaceholder('git@github.com:username/repo.git')
+          .setValue(this.plugin.settings.remoteRepoUrl)
+          .onChange(async value => {
+            this.plugin.settings.remoteRepoUrl = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Target Branch')
+      .setDesc('Default branch to push files to (e.g. main or gh-pages)')
+      .addText(text =>
+        text
+          .setPlaceholder('main')
+          .setValue(this.plugin.settings.mainBranch)
+          .onChange(async value => {
+            this.plugin.settings.mainBranch = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('GitHub Repo Path (Optional)')
+      .setDesc('Format: username/repo (for content feedback links). Auto-parsed if blank.')
+      .addText(text =>
+        text
+          .setPlaceholder('username/repo')
+          .setValue(this.plugin.settings.githubRepo)
+          .onChange(async value => {
+            this.plugin.settings.githubRepo = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Run Git via WSL')
+      .setDesc('Toggle this ON if you want the plugin to delegate git actions to WSL bash.')
+      .addToggle(toggle =>
+        toggle
+          .setValue(this.plugin.settings.useWsl)
+          .onChange(async value => {
+            this.plugin.settings.useWsl = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    containerEl.createEl('h3', { text: 'Maintenance & Actions' });
+
+    new Setting(containerEl)
+      .setName('Initialize Jekyll Theme Templates')
+      .setDesc('Generates index, layouts, styles, and workflows in the local repository.')
+      .addButton(cb => {
+        cb.setButtonText("Initialize Theme");
+        cb.onClick(() => {
+          this.plugin.initializeJekyllTheme();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('Reset Local Repository')
+      .setDesc('⚠️ WARNING: Deletes the entire local repository folder and performs a fresh clone and theme setup.')
+      .addButton(cb => {
+        cb.setButtonText("Reset Repo");
+        cb.setWarning(true);
+        cb.onClick(() => {
+          this.plugin.resetLocalRepo();
+        });
+      });
+  }
+}

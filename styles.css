@@ -1,0 +1,7 @@
+/* Obsidian Publish Plugin Styles */
+
+/* Feel free to add custom rules for settings page if needed */
+.setting-item-description {
+  font-size: 0.85em;
+  opacity: 0.8;
+}

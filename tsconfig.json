@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "inlineSourceMap": true,
+    "inlineSources": true,
+    "module": "CommonJS",
+    "target": "ES2022",
+    "moduleResolution": "node",
+    "allowJs": true,
+    "noImplicitAny": true,
+    "sourceMap": false,
+    "strict": true,
+    "lib": ["DOM", "ES2022"],
+    "skipLibCheck": true
+  },
+  "include": ["main.ts", "git-service.ts", "theme-service.ts", "utils.ts", "declarations.d.ts"]
+}

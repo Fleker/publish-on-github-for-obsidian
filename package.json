@@ -1,0 +1,19 @@
+{
+  "name": "obsidian-publish-git",
+  "version": "1.0.0",
+  "description": "Publish selective Obsidian notes to Jekyll site using Git",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production"
+  },
+  "keywords": [],
+  "author": "Nick",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.20.0",
+    "obsidian": "^1.5.0",
+    "typescript": "^5.0.0"
+  }
+}
