@@ -3,11 +3,12 @@ import {
   Plugin,
   PluginSettingTab,
   Setting,
+  SettingDefinitionItem,
   TFile,
   FileSystemAdapter
 } from 'obsidian';
 import * as path from 'path';
-import * as fs from 'fs';
+import { promises as fs, existsSync } from 'fs';
 
 import { LogNotice as Notice } from './utils';
 import { GitService } from './git-service';
@@ -36,11 +37,11 @@ const DEFAULT_SETTINGS: PublishSettings = {
 };
 
 export default class PublishPlugin extends Plugin {
-  settings: PublishSettings;
-  gitService: GitService;
-  themeService: ThemeService;
+  declare settings: PublishSettings;
+  gitService!: GitService;
+  themeService!: ThemeService;
 
-  async onload() {
+  async onload(): Promise<void> {
     await this.loadSettings();
 
     // Instantiate modular services
@@ -52,42 +53,49 @@ export default class PublishPlugin extends Plugin {
 
     // Register ribbon icon
     this.addRibbonIcon('share-2', 'Publish Public Notes', () => {
-      this.publishNotes();
+      void this.publishNotes();
     });
 
     // Register commands
     this.addCommand({
       id: 'publish-public-notes',
       name: 'Publish Public Notes',
-      callback: () => this.publishNotes()
+      callback: () => {
+        void this.publishNotes();
+      }
     });
 
     this.addCommand({
       id: 'initialize-jekyll-site',
       name: 'Initialize Jekyll Theme Templates',
-      callback: () => this.initializeJekyllTheme()
+      callback: () => {
+        void this.initializeJekyllTheme();
+      }
     });
 
     this.addCommand({
       id: 'reset-local-repository',
       name: 'Reset Local Git Repository',
-      callback: () => this.resetLocalRepo()
+      callback: () => {
+        void this.resetLocalRepo();
+      }
     });
 
     // Add settings tab
     this.addSettingTab(new PublishSettingTab(this.app, this));
   }
 
-  async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+  async loadSettings(): Promise<void> {
+    const loadedData = (await this.loadData()) as Partial<PublishSettings> | null;
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, loadedData ?? {});
   }
 
-  async saveSettings() {
+  async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
   }
 
   // Wrapper for theme initialization
-  async initializeJekyllTheme() {
+  async initializeJekyllTheme(): Promise<void> {
     // Parse Github username/repo from URL if not specified
     if (!this.settings.githubRepo && this.settings.remoteRepoUrl) {
       const repoUrl = this.settings.remoteRepoUrl;
@@ -109,7 +117,7 @@ export default class PublishPlugin extends Plugin {
   }
 
   // Wipe local repository directory entirely and re-clone/reset
-  async resetLocalRepo() {
+  async resetLocalRepo(): Promise<void> {
     const repoPath = this.settings.localRepoPath;
     if (!repoPath) {
       new Notice("Configure Local Repository Path in Settings first!");
@@ -117,27 +125,29 @@ export default class PublishPlugin extends Plugin {
     }
 
     try {
-      if (fs.existsSync(repoPath)) {
+      if (existsSync(repoPath)) {
         new Notice("Wiping local directory...");
-        await fs.promises.rm(repoPath, { recursive: true, force: true });
+        await fs.rm(repoPath, { recursive: true, force: true });
       }
-      const vaultPath = this.app.vault.adapter instanceof FileSystemAdapter ? this.app.vault.adapter.getBasePath() : '';
+      const adapter = this.app.vault.adapter;
+      const vaultPath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : '';
       const success = await this.gitService.checkAndInitGitRepo(repoPath, this.settings.remoteRepoUrl, vaultPath);
       if (success) {
         new Notice("Local Git repository wiped and re-initialized!");
         await this.initializeJekyllTheme();
       }
-    } catch (err) {
-      new Notice("Reset Error: " + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      new Notice("Reset Error: " + message);
     }
   }
 
   // Clean out previous markdown and asset files in the repo (preserving .git, layouts, configs)
-  async clearOldFiles() {
+  async clearOldFiles(): Promise<void> {
     const repoPath = this.settings.localRepoPath;
-    if (!fs.existsSync(repoPath)) return;
+    if (!existsSync(repoPath)) return;
 
-    const files = await fs.promises.readdir(repoPath);
+    const files = await fs.readdir(repoPath);
     for (const file of files) {
       // Keep Git, Jekyll structure, and configuration files
       if (
@@ -155,20 +165,21 @@ export default class PublishPlugin extends Plugin {
       }
 
       const fullPath = path.join(repoPath, file);
-      const stat = await fs.promises.stat(fullPath);
+      const stat = await fs.stat(fullPath);
       if (stat.isDirectory()) {
-        await fs.promises.rm(fullPath, { recursive: true, force: true });
+        await fs.rm(fullPath, { recursive: true, force: true });
       } else {
-        await fs.promises.rm(fullPath, { force: true });
+        await fs.rm(fullPath, { force: true });
       }
     }
   }
 
   // Principal function to gather public files, process wikilinks, handle assets, diff, commit and push
-  async publishNotes() {
+  async publishNotes(): Promise<void> {
     const activeNotice = new Notice("Starting Publish Pipeline...", 0);
 
-    const vaultPath = this.app.vault.adapter instanceof FileSystemAdapter ? this.app.vault.adapter.getBasePath() : '';
+    const adapter = this.app.vault.adapter;
+    const vaultPath = adapter instanceof FileSystemAdapter ? adapter.getBasePath() : '';
     const isGitReady = await this.gitService.checkAndInitGitRepo(
       this.settings.localRepoPath,
       this.settings.remoteRepoUrl,
@@ -205,10 +216,11 @@ export default class PublishPlugin extends Plugin {
 
       // Check frontmatter tags
       if (!isPublic && cache?.frontmatter) {
-        const tagsProp = cache.frontmatter.tags || cache.frontmatter.tag;
+        const frontmatter = cache.frontmatter as Record<string, unknown>;
+        const tagsProp = frontmatter['tags'] ?? frontmatter['tag'];
         if (tagsProp) {
           if (Array.isArray(tagsProp)) {
-            if (tagsProp.some(t => t === tagToFind.replace('#', '') || t === tagToFind)) {
+            if (tagsProp.some((t: unknown) => typeof t === 'string' && (t === tagToFind.replace('#', '') || t === tagToFind))) {
               isPublic = true;
             }
           } else if (typeof tagsProp === 'string') {
@@ -255,19 +267,19 @@ export default class PublishPlugin extends Plugin {
         const targetPath = path.join(repoPath, file.path);
         const targetDir = path.dirname(targetPath);
 
-        if (!fs.existsSync(targetDir)) {
-          await fs.promises.mkdir(targetDir, { recursive: true });
+        if (!existsSync(targetDir)) {
+          await fs.mkdir(targetDir, { recursive: true });
         }
 
-        await fs.promises.writeFile(targetPath, finalContent, 'utf8');
+        await fs.writeFile(targetPath, finalContent, 'utf8');
       }
 
       // Handle asset/image replication
       if (referencedAssets.size > 0) {
         activeNotice.setMessage(`Syncing ${referencedAssets.size} images...`);
         const targetAssetsDir = path.join(repoPath, 'assets', 'images');
-        if (!fs.existsSync(targetAssetsDir)) {
-          await fs.promises.mkdir(targetAssetsDir, { recursive: true });
+        if (!existsSync(targetAssetsDir)) {
+          await fs.mkdir(targetAssetsDir, { recursive: true });
         }
 
         const vaultAdapter = this.app.vault.adapter;
@@ -276,13 +288,13 @@ export default class PublishPlugin extends Plugin {
 
           for (const assetPath of referencedAssets) {
             const fullSourcePath = path.join(basePath, assetPath);
-            if (fs.existsSync(fullSourcePath)) {
-              const fileStat = await fs.promises.stat(fullSourcePath);
+            if (existsSync(fullSourcePath)) {
+              const fileStat = await fs.stat(fullSourcePath);
               if (fileStat.isFile()) {
                 const ext = path.extname(assetPath);
                 const name = path.basename(assetPath, ext);
                 const targetAssetPath = path.join(targetAssetsDir, `${name}${ext}`);
-                await fs.promises.copyFile(fullSourcePath, targetAssetPath);
+                await fs.copyFile(fullSourcePath, targetAssetPath);
               }
             }
           }
@@ -335,9 +347,10 @@ export default class PublishPlugin extends Plugin {
 
       activeNotice.hide();
       new Notice(`Successfully Published! Added: ${added.length}, Modified: ${modified.length}, Removed: ${deleted.length}`);
-    } catch (err) {
+    } catch (err: unknown) {
       activeNotice.hide();
-      new Notice("Publish Failure: " + err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      new Notice("Publish Failure: " + message);
       console.error(err);
     }
   }
@@ -345,7 +358,7 @@ export default class PublishPlugin extends Plugin {
   // Standard Frontmatter extractor & badge pre-pender with automatic publish-tag stripping
   processFrontmatter(content: string, title: string): { processedContent: string, properties: Record<string, string> } {
     let processed = content;
-    let frontmatter: Record<string, any> = {};
+    const frontmatter: Record<string, string> = {};
 
     const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
     if (match) {
@@ -434,7 +447,7 @@ export default class PublishPlugin extends Plugin {
     referencedAssets: Set<string>
   ): string {
     // 1. Convert embeds (e.g. images)
-    let processed = content.replace(/!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match, linkpath, label) => {
+    let processed = content.replace(/!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match: string, linkpath: string, label: string | undefined) => {
       const dest = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourceFile.path);
       if (!dest) return match;
 
@@ -454,7 +467,7 @@ export default class PublishPlugin extends Plugin {
     });
 
     // 2. Convert standard wikilinks
-    processed = processed.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match, linkpath, label) => {
+    processed = processed.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match: string, linkpath: string, label: string | undefined) => {
       const dest = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourceFile.path);
       if (!dest) return match;
 
@@ -509,6 +522,51 @@ class PublishSettingTab extends PluginSettingTab {
   constructor(app: App, plugin: PublishPlugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      {
+        name: 'Publish tag',
+        desc: 'Only notes with this tag in body or frontmatter will be published.',
+      },
+      {
+        name: 'Site title',
+        desc: 'Title of your published website (e.g. My Public Notes)',
+      },
+      {
+        name: 'Site subtitle',
+        desc: 'Subtitle/brand of your published website (e.g. Digital Garden)',
+      },
+      {
+        name: 'Local repository path',
+        desc: 'Local directory where the Git clone lives. (Use an absolute Windows path if on Windows)',
+      },
+      {
+        name: 'Remote Git URL',
+        desc: 'Your target GitHub repository clone URL.',
+      },
+      {
+        name: 'Target branch',
+        desc: 'Default branch to push files to (e.g. main or gh-pages)',
+      },
+      {
+        name: 'GitHub repository path (optional)',
+        desc: 'Format: username/repo (for content feedback links). Auto-parsed if blank.',
+      },
+      {
+        name: 'Run Git via WSL',
+        desc: 'Toggle this ON if you want the plugin to delegate Git actions to WSL bash.',
+      },
+      {
+        name: 'Initialize Jekyll theme templates',
+        desc: 'Generates index, layouts, styles, and workflows in the local repository.',
+      },
+      {
+        name: 'Reset local repository',
+        desc: '⚠️ WARNING: Deletes the entire local repository folder and performs a fresh clone and theme setup.',
+      }
+    ];
   }
 
   display(): void {
@@ -618,7 +676,9 @@ class PublishSettingTab extends PluginSettingTab {
           })
       );
 
-    containerEl.createEl('h3', { text: 'Maintenance & Actions' });
+    new Setting(containerEl)
+      .setName('Maintenance & Actions')
+      .setHeading();
 
     new Setting(containerEl)
       .setName('Initialize Jekyll theme templates')
@@ -626,7 +686,7 @@ class PublishSettingTab extends PluginSettingTab {
       .addButton(cb => {
         cb.setButtonText("Initialize Theme");
         cb.onClick(() => {
-          this.plugin.initializeJekyllTheme();
+          void this.plugin.initializeJekyllTheme();
         });
       });
 
@@ -635,9 +695,9 @@ class PublishSettingTab extends PluginSettingTab {
       .setDesc('⚠️ WARNING: Deletes the entire local repository folder and performs a fresh clone and theme setup.')
       .addButton(cb => {
         cb.setButtonText("Reset Repo");
-        cb.setWarning(true);
+        cb.setDestructive();
         cb.onClick(() => {
-          this.plugin.resetLocalRepo();
+          void this.plugin.resetLocalRepo();
         });
       });
   }

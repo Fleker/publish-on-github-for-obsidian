@@ -2,7 +2,8 @@
 
 A premium Obsidian plugin that enables selective publishing of notes directly to a GitHub Pages-hosted Jekyll static site. It queries your vault, extracts notes tagged with `#public` (or a custom tag), converts Obsidian-specific wikilinks and images to relative Markdown pathways, builds stylish HTML property badges, validates links, and executes automated Git commits and pushes.
 
-**Example**: https://felker.dev/obsidian-knowledge/
+- **Example**: https://felker.dev/obsidian-knowledge/
+- **Obsidian Listing**: https://community.obsidian.md/account/plugins/publish-git
 
 ## 🌟 Key Features
 
@@ -79,3 +80,12 @@ A premium Obsidian plugin that enables selective publishing of notes directly to
   Removed:
     - folder/OldNote.md
   ```
+
+## Usage
+
+After configuring your settings, go to any note you want.
+
+1. Assign your note the tag `#public` or the tag you've configured.
+1. Go to the command palette. Initialize the project (first-time only)
+1. Publish the project
+1. The GitHub Action included in the project will automatically start building your website. It takes about a minute to be live.

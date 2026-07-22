@@ -6,12 +6,13 @@
     "module": "CommonJS",
     "target": "ES2022",
     "moduleResolution": "node",
-    "allowJs": true,
+    "allowJs": false,
     "noImplicitAny": true,
     "sourceMap": false,
     "strict": true,
     "lib": ["DOM", "ES2022"],
     "skipLibCheck": true
   },
-  "include": ["main.ts", "git-service.ts", "theme-service.ts", "utils.ts", "declarations.d.ts"]
+  "include": ["main.ts", "git-service.ts", "theme-service.ts", "utils.ts", "declarations.d.ts"],
+  "exclude": ["templates/**/*", "node_modules", "main.js"]
 }

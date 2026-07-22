@@ -146,6 +146,18 @@ main {
   margin: 0;
 }
 
+.tree-folder-contents.is-collapsed {
+  display: none;
+}
+
+.tree-folder-contents.is-expanded {
+  display: block;
+}
+
+.is-hidden {
+  display: none !important;
+}
+
 .tree-file-link {
   display: block;
   padding: 4px 8px;
@@ -180,6 +192,14 @@ main {
   border-left: 2px solid transparent;
   padding-left: 8px;
 }
+
+.toc-link[data-level="1"] { padding-left: 0px; }
+.toc-link[data-level="2"] { padding-left: 12px; }
+.toc-link[data-level="3"] { padding-left: 24px; }
+.toc-link[data-level="4"] { padding-left: 36px; }
+.toc-link[data-level="5"] { padding-left: 48px; }
+.toc-link[data-level="6"] { padding-left: 60px; }
+
 .toc-link:hover, .toc-link.active {
   opacity: 1;
   text-decoration: none;

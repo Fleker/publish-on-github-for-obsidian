@@ -1,10 +1,10 @@
 import { LogNotice as Notice } from './utils';
-import * as child_process from 'child_process';
+import { exec as execCb } from 'child_process';
 import * as path from 'path';
-import * as fs from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import { promisify } from 'util';
 
-const exec = promisify(child_process.exec);
+const exec = promisify(execCb);
 
 export class GitService {
   constructor(private getSettings: () => { useWsl: boolean; mainBranch: string }) {}
@@ -17,11 +17,11 @@ export class GitService {
       // By running "wsl <cmd>" with host cwd set, WSL executes the command natively inside
       // the translated directory (e.g. /mnt/c/Users/...). This eliminates single-quote wrapping errors on Windows.
       const wslCmd = `wsl ${cmd}`;
-      const { stdout } = await exec(wslCmd, { cwd: dir, maxBuffer: 10 * 1024 * 1024 });
-      return stdout;
+      const result = await exec(wslCmd, { cwd: dir, maxBuffer: 10 * 1024 * 1024 });
+      return String(result.stdout);
     } else {
-      const { stdout } = await exec(cmd, { cwd: dir, maxBuffer: 10 * 1024 * 1024 });
-      return stdout;
+      const result = await exec(cmd, { cwd: dir, maxBuffer: 10 * 1024 * 1024 });
+      return String(result.stdout);
     }
   }
 
@@ -52,11 +52,11 @@ export class GitService {
     }
 
     try {
-      if (!fs.existsSync(repoPath)) {
-        await fs.promises.mkdir(repoPath, { recursive: true });
+      if (!existsSync(repoPath)) {
+        await fs.mkdir(repoPath, { recursive: true });
       }
 
-      const hasGit = fs.existsSync(path.join(repoPath, '.git'));
+      const hasGit = existsSync(path.join(repoPath, '.git'));
       if (!hasGit) {
         new Notice("Local repo not cloned. Attempting clone...");
         try {
@@ -64,42 +64,43 @@ export class GitService {
             // Run clone using WSL by invoking it in the parent directory and targeting the folder name
             const parentDir = path.dirname(repoPath);
             const folderName = path.basename(repoPath);
-            if (!fs.existsSync(parentDir)) {
-              await fs.promises.mkdir(parentDir, { recursive: true });
+            if (!existsSync(parentDir)) {
+              await fs.mkdir(parentDir, { recursive: true });
             }
             await exec(`wsl git clone "${remoteUrl}" "${folderName}"`, { cwd: parentDir });
           } else {
             await exec(`git clone "${remoteUrl}" "${repoPath}"`);
           }
           new Notice("Repository cloned successfully!");
-        } catch (e) {
+        } catch (_cloneErr) {
           // If clone fails (e.g. non-empty directory or empty repo), initialize locally
-          console.warn("Clone failed, running fallback init:", e);
           try {
             await this.runCommand("git init", repoPath);
             // Try to add remote, or set url if origin already exists
             try {
               await this.runCommand(`git remote add origin "${remoteUrl}"`, repoPath);
-            } catch (remoteErr) {
+            } catch {
               await this.runCommand(`git remote set-url origin "${remoteUrl}"`, repoPath);
             }
 
             // Try checking out the branch safely
             try {
               await this.runCommand(`git checkout -b "${settings.mainBranch}"`, repoPath);
-            } catch (checkoutErr) {
-              console.warn("Branch checkout ignored:", checkoutErr);
+            } catch {
+              // Branch checkout ignored
             }
             new Notice("Associated local folder with Git repository origin successfully!");
-          } catch (fallbackErr) {
-            new Notice("Failed to initialize repository: " + fallbackErr.message);
+          } catch (fallbackErr: unknown) {
+            const message = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+            new Notice("Failed to initialize repository: " + message);
             return false;
           }
         }
       }
       return true;
-    } catch (err) {
-      new Notice("Git Initialization Error: " + err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      new Notice("Git Initialization Error: " + message);
       return false;
     }
   }
@@ -138,12 +139,12 @@ export class GitService {
 
     const fullCommitMsg = `${commitTitle}\n\n${commitBody}`;
     const msgFilePath = path.join(repoPath, 'commit-msg.txt');
-    await fs.promises.writeFile(msgFilePath, fullCommitMsg, 'utf8');
+    await fs.writeFile(msgFilePath, fullCommitMsg, 'utf8');
 
     await this.runCommand(`git commit -F commit-msg.txt`, repoPath);
 
-    if (fs.existsSync(msgFilePath)) {
-      await fs.promises.rm(msgFilePath, { force: true });
+    if (existsSync(msgFilePath)) {
+      await fs.rm(msgFilePath, { force: true });
     }
 
     await this.runCommand(`git push origin ${settings.mainBranch}`, repoPath);

@@ -40,28 +40,26 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian2 = require("obsidian");
 var path3 = __toESM(require("path"));
-var fs3 = __toESM(require("fs"));
+var import_fs3 = require("fs");
 
 // utils.ts
 var import_obsidian = require("obsidian");
 var LogNotice = class extends import_obsidian.Notice {
   constructor(message, duration) {
     super(message, duration);
-    console.log(`[GitSelectivePublisher] Notice: ${message}`);
   }
   setMessage(message) {
     super.setMessage(message);
-    console.log(`[GitSelectivePublisher] Notice Update: ${message}`);
     return this;
   }
 };
 
 // git-service.ts
-var child_process = __toESM(require("child_process"));
+var import_child_process = require("child_process");
 var path = __toESM(require("path"));
-var fs = __toESM(require("fs"));
+var import_fs = require("fs");
 var import_util = require("util");
-var exec2 = (0, import_util.promisify)(child_process.exec);
+var exec = (0, import_util.promisify)(import_child_process.exec);
 var GitService = class {
   constructor(getSettings) {
     this.getSettings = getSettings;
@@ -71,11 +69,11 @@ var GitService = class {
     const settings = this.getSettings();
     if (settings.useWsl) {
       const wslCmd = `wsl ${cmd}`;
-      const { stdout } = await exec2(wslCmd, { cwd: dir, maxBuffer: 10 * 1024 * 1024 });
-      return stdout;
+      const result = await exec(wslCmd, { cwd: dir, maxBuffer: 10 * 1024 * 1024 });
+      return String(result.stdout);
     } else {
-      const { stdout } = await exec2(cmd, { cwd: dir, maxBuffer: 10 * 1024 * 1024 });
-      return stdout;
+      const result = await exec(cmd, { cwd: dir, maxBuffer: 10 * 1024 * 1024 });
+      return String(result.stdout);
     }
   }
   // Ensure git repo is initialized/cloned in localRepoPath with absolute vault safety check
@@ -98,48 +96,48 @@ var GitService = class {
       }
     }
     try {
-      if (!fs.existsSync(repoPath)) {
-        await fs.promises.mkdir(repoPath, { recursive: true });
+      if (!(0, import_fs.existsSync)(repoPath)) {
+        await import_fs.promises.mkdir(repoPath, { recursive: true });
       }
-      const hasGit = fs.existsSync(path.join(repoPath, ".git"));
+      const hasGit = (0, import_fs.existsSync)(path.join(repoPath, ".git"));
       if (!hasGit) {
         new LogNotice("Local repo not cloned. Attempting clone...");
         try {
           if (settings.useWsl) {
             const parentDir = path.dirname(repoPath);
             const folderName = path.basename(repoPath);
-            if (!fs.existsSync(parentDir)) {
-              await fs.promises.mkdir(parentDir, { recursive: true });
+            if (!(0, import_fs.existsSync)(parentDir)) {
+              await import_fs.promises.mkdir(parentDir, { recursive: true });
             }
-            await exec2(`wsl git clone "${remoteUrl}" "${folderName}"`, { cwd: parentDir });
+            await exec(`wsl git clone "${remoteUrl}" "${folderName}"`, { cwd: parentDir });
           } else {
-            await exec2(`git clone "${remoteUrl}" "${repoPath}"`);
+            await exec(`git clone "${remoteUrl}" "${repoPath}"`);
           }
           new LogNotice("Repository cloned successfully!");
-        } catch (e) {
-          console.warn("Clone failed, running fallback init:", e);
+        } catch (_cloneErr) {
           try {
             await this.runCommand("git init", repoPath);
             try {
               await this.runCommand(`git remote add origin "${remoteUrl}"`, repoPath);
-            } catch (remoteErr) {
+            } catch {
               await this.runCommand(`git remote set-url origin "${remoteUrl}"`, repoPath);
             }
             try {
               await this.runCommand(`git checkout -b "${settings.mainBranch}"`, repoPath);
-            } catch (checkoutErr) {
-              console.warn("Branch checkout ignored:", checkoutErr);
+            } catch {
             }
             new LogNotice("Associated local folder with Git repository origin successfully!");
           } catch (fallbackErr) {
-            new LogNotice("Failed to initialize repository: " + fallbackErr.message);
+            const message = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+            new LogNotice("Failed to initialize repository: " + message);
             return false;
           }
         }
       }
       return true;
     } catch (err) {
-      new LogNotice("Git Initialization Error: " + err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      new LogNotice("Git Initialization Error: " + message);
       return false;
     }
   }
@@ -176,10 +174,10 @@ Removed:
 
 ${commitBody}`;
     const msgFilePath = path.join(repoPath, "commit-msg.txt");
-    await fs.promises.writeFile(msgFilePath, fullCommitMsg, "utf8");
+    await import_fs.promises.writeFile(msgFilePath, fullCommitMsg, "utf8");
     await this.runCommand(`git commit -F commit-msg.txt`, repoPath);
-    if (fs.existsSync(msgFilePath)) {
-      await fs.promises.rm(msgFilePath, { force: true });
+    if ((0, import_fs.existsSync)(msgFilePath)) {
+      await import_fs.promises.rm(msgFilePath, { force: true });
     }
     await this.runCommand(`git push origin ${settings.mainBranch}`, repoPath);
   }
@@ -187,203 +185,19 @@ ${commitBody}`;
 
 // theme-service.ts
 var path2 = __toESM(require("path"));
-var fs2 = __toESM(require("fs"));
+var import_fs2 = require("fs");
 
 // templates/config.yml
 var config_default = 'title: "${SITE_TITLE}"\nsubtitle: "${SITE_SUBTITLE}"\ndescription: "A digital garden compiled directly from my Obsidian vault."\ngithub_repo: "${GITHUB_REPO}"\npublish_tag: "${PUBLISH_TAG}"\nmarkdown: kramdown\nkramdown:\n  input: GFM\n  hard_wrap: false\nexclude:\n  - Gemfile\n  - Gemfile.lock\n  - node_modules\n  - vendor/\n  - .github/\n\nrelative_links:\n  enabled: false\n';
 
 // templates/style.css
-var style_default = ':root {\n  --bg-color: #f8f9fa;\n  --text-color: #212529;\n  --primary-color: #3182ce;\n  --primary-hover: #2b6cb0;\n  --border-color: #e2e8f0;\n  --sidebar-bg: #edf2f7;\n  --sidebar-active: #e2e8f0;\n  --content-bg: #ffffff;\n  --badge-bg: #ebf8ff;\n  --badge-color: #2b6cb0;\n  --badge-border: #bee3f8;\n  --toc-active: #3182ce;\n  --code-bg: #edf2f7;\n  --code-text: #805ad5;\n  --header-height: 60px;\n}\n\n@media (prefers-color-scheme: dark) {\n  :root {\n    --bg-color: #0f172a;\n    --text-color: #cbd5e1;\n    --primary-color: #38bdf8;\n    --primary-hover: #0ea5e9;\n    --border-color: #1e293b;\n    --sidebar-bg: #1e293b;\n    --sidebar-active: #334155;\n    --content-bg: #0f172a;\n    --badge-bg: #0369a133;\n    --badge-color: #38bdf8;\n    --badge-border: #0369a1;\n    --toc-active: #38bdf8;\n    --code-bg: #1e293b;\n    --code-text: #c084fc;\n  }\n}\n\n* {\n  box-sizing: border-box;\n}\n\nbody {\n  margin: 0;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;\n  background-color: var(--bg-color);\n  color: var(--text-color);\n  line-height: 1.6;\n}\n\na {\n  color: var(--primary-color);\n  text-decoration: none;\n}\na:hover {\n  text-decoration: underline;\n}\n\nheader {\n  height: var(--header-height);\n  border-bottom: 1px solid var(--border-color);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 0 20px;\n  background-color: var(--content-bg);\n  position: sticky;\n  top: 0;\n  z-index: 100;\n}\n\n.logo {\n  font-weight: 700;\n  font-size: 1.2rem;\n}\n\n.container {\n  display: flex;\n  min-height: calc(100vh - var(--header-height));\n  max-width: 1600px;\n  margin: 0 auto;\n}\n\n/* Sidebars layout */\n.sidebar-left {\n  width: 280px;\n  background-color: var(--sidebar-bg);\n  border-right: 1px solid var(--border-color);\n  padding: 20px;\n  overflow-y: auto;\n  flex-shrink: 0;\n}\n\n.sidebar-right {\n  width: 280px;\n  border-left: 1px solid var(--border-color);\n  padding: 20px;\n  overflow-y: auto;\n  flex-shrink: 0;\n}\n\nmain {\n  flex-grow: 1;\n  padding: 40px;\n  background-color: var(--content-bg);\n  overflow-x: hidden;\n}\n\n/* File explorer */\n.search-box {\n  width: 100%;\n  padding: 8px 12px;\n  border: 1px solid var(--border-color);\n  border-radius: 6px;\n  background-color: var(--content-bg);\n  color: var(--text-color);\n  margin-bottom: 15px;\n}\n\n.tree-list {\n  list-style: none;\n  padding-left: 0;\n  margin: 0;\n}\n\n.tree-item {\n  margin: 4px 0;\n}\n\n.tree-folder {\n  font-weight: 600;\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  user-select: none;\n  padding: 4px;\n  border-radius: 4px;\n}\n.tree-folder:hover {\n  background-color: var(--sidebar-active);\n}\n\n.tree-folder-contents {\n  list-style: none;\n  padding-left: 15px;\n  margin: 0;\n}\n\n.tree-file-link {\n  display: block;\n  padding: 4px 8px;\n  color: var(--text-color);\n  border-radius: 4px;\n}\n.tree-file-link:hover, .tree-file-link.active {\n  background-color: var(--sidebar-active);\n  text-decoration: none;\n}\n.tree-file-link.active {\n  font-weight: 600;\n  color: var(--primary-color);\n}\n\n/* TOC style */\n.toc-title {\n  font-weight: 700;\n  margin-top: 0;\n  font-size: 0.9rem;\n  text-transform: uppercase;\n  letter-spacing: 0.05em;\n  opacity: 0.8;\n}\n\n.toc-link {\n  display: block;\n  font-size: 0.9rem;\n  color: var(--text-color);\n  opacity: 0.8;\n  margin: 8px 0;\n  border-left: 2px solid transparent;\n  padding-left: 8px;\n}\n.toc-link:hover, .toc-link.active {\n  opacity: 1;\n  text-decoration: none;\n}\n.toc-link.active {\n  color: var(--toc-active);\n  border-left-color: var(--toc-active);\n  font-weight: 600;\n}\n\n.badge {\n  display: inline-block;\n  margin-right: 8px;\n  margin-bottom: 8px;\n}\n\n/* Responsive design */\n@media (max-width: 1024px) {\n  .sidebar-right {\n    display: none;\n  }\n}\n\n@media (max-width: 768px) {\n  .container {\n    flex-direction: column;\n  }\n  .sidebar-left {\n    width: 100%;\n    border-right: none;\n    border-bottom: 1px solid var(--border-color);\n    max-height: 300px;\n  }\n  main {\n    padding: 20px;\n  }\n}\n';
+var style_default = ':root {\n  --bg-color: #f8f9fa;\n  --text-color: #212529;\n  --primary-color: #3182ce;\n  --primary-hover: #2b6cb0;\n  --border-color: #e2e8f0;\n  --sidebar-bg: #edf2f7;\n  --sidebar-active: #e2e8f0;\n  --content-bg: #ffffff;\n  --badge-bg: #ebf8ff;\n  --badge-color: #2b6cb0;\n  --badge-border: #bee3f8;\n  --toc-active: #3182ce;\n  --code-bg: #edf2f7;\n  --code-text: #805ad5;\n  --header-height: 60px;\n}\n\n@media (prefers-color-scheme: dark) {\n  :root {\n    --bg-color: #0f172a;\n    --text-color: #cbd5e1;\n    --primary-color: #38bdf8;\n    --primary-hover: #0ea5e9;\n    --border-color: #1e293b;\n    --sidebar-bg: #1e293b;\n    --sidebar-active: #334155;\n    --content-bg: #0f172a;\n    --badge-bg: #0369a133;\n    --badge-color: #38bdf8;\n    --badge-border: #0369a1;\n    --toc-active: #38bdf8;\n    --code-bg: #1e293b;\n    --code-text: #c084fc;\n  }\n}\n\n* {\n  box-sizing: border-box;\n}\n\nbody {\n  margin: 0;\n  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;\n  background-color: var(--bg-color);\n  color: var(--text-color);\n  line-height: 1.6;\n}\n\na {\n  color: var(--primary-color);\n  text-decoration: none;\n}\na:hover {\n  text-decoration: underline;\n}\n\nheader {\n  height: var(--header-height);\n  border-bottom: 1px solid var(--border-color);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 0 20px;\n  background-color: var(--content-bg);\n  position: sticky;\n  top: 0;\n  z-index: 100;\n}\n\n.logo {\n  font-weight: 700;\n  font-size: 1.2rem;\n}\n\n.container {\n  display: flex;\n  min-height: calc(100vh - var(--header-height));\n  max-width: 1600px;\n  margin: 0 auto;\n}\n\n/* Sidebars layout */\n.sidebar-left {\n  width: 280px;\n  background-color: var(--sidebar-bg);\n  border-right: 1px solid var(--border-color);\n  padding: 20px;\n  overflow-y: auto;\n  flex-shrink: 0;\n}\n\n.sidebar-right {\n  width: 280px;\n  border-left: 1px solid var(--border-color);\n  padding: 20px;\n  overflow-y: auto;\n  flex-shrink: 0;\n}\n\nmain {\n  flex-grow: 1;\n  padding: 40px;\n  background-color: var(--content-bg);\n  overflow-x: hidden;\n}\n\n/* File explorer */\n.search-box {\n  width: 100%;\n  padding: 8px 12px;\n  border: 1px solid var(--border-color);\n  border-radius: 6px;\n  background-color: var(--content-bg);\n  color: var(--text-color);\n  margin-bottom: 15px;\n}\n\n.tree-list {\n  list-style: none;\n  padding-left: 0;\n  margin: 0;\n}\n\n.tree-item {\n  margin: 4px 0;\n}\n\n.tree-folder {\n  font-weight: 600;\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  user-select: none;\n  padding: 4px;\n  border-radius: 4px;\n}\n.tree-folder:hover {\n  background-color: var(--sidebar-active);\n}\n\n.tree-folder-contents {\n  list-style: none;\n  padding-left: 15px;\n  margin: 0;\n}\n\n.tree-folder-contents.is-collapsed {\n  display: none;\n}\n\n.tree-folder-contents.is-expanded {\n  display: block;\n}\n\n.is-hidden {\n  display: none !important;\n}\n\n.tree-file-link {\n  display: block;\n  padding: 4px 8px;\n  color: var(--text-color);\n  border-radius: 4px;\n}\n.tree-file-link:hover, .tree-file-link.active {\n  background-color: var(--sidebar-active);\n  text-decoration: none;\n}\n.tree-file-link.active {\n  font-weight: 600;\n  color: var(--primary-color);\n}\n\n/* TOC style */\n.toc-title {\n  font-weight: 700;\n  margin-top: 0;\n  font-size: 0.9rem;\n  text-transform: uppercase;\n  letter-spacing: 0.05em;\n  opacity: 0.8;\n}\n\n.toc-link {\n  display: block;\n  font-size: 0.9rem;\n  color: var(--text-color);\n  opacity: 0.8;\n  margin: 8px 0;\n  border-left: 2px solid transparent;\n  padding-left: 8px;\n}\n\n.toc-link[data-level="1"] { padding-left: 0px; }\n.toc-link[data-level="2"] { padding-left: 12px; }\n.toc-link[data-level="3"] { padding-left: 24px; }\n.toc-link[data-level="4"] { padding-left: 36px; }\n.toc-link[data-level="5"] { padding-left: 48px; }\n.toc-link[data-level="6"] { padding-left: 60px; }\n\n.toc-link:hover, .toc-link.active {\n  opacity: 1;\n  text-decoration: none;\n}\n.toc-link.active {\n  color: var(--toc-active);\n  border-left-color: var(--toc-active);\n  font-weight: 600;\n}\n\n.badge {\n  display: inline-block;\n  margin-right: 8px;\n  margin-bottom: 8px;\n}\n\n/* Responsive design */\n@media (max-width: 1024px) {\n  .sidebar-right {\n    display: none;\n  }\n}\n\n@media (max-width: 768px) {\n  .container {\n    flex-direction: column;\n  }\n  .sidebar-left {\n    width: 100%;\n    border-right: none;\n    border-bottom: 1px solid var(--border-color);\n    max-height: 300px;\n  }\n  main {\n    padding: 20px;\n  }\n}\n';
 
 // templates/site-data.js
 var site_data_default = "---\n---\nconst sitePages = [\n  {% for p in site.pages %}\n    {% if p.title %}\n    {\n      title: {{ p.title | jsonify }},\n      url: {{ p.url | relative_url | jsonify }},\n      path: {{ p.path | jsonify }}\n    },\n    {% endif %}\n  {% endfor %}\n];\n";
 
 // templates/app.js
-var app_default = `document.addEventListener('DOMContentLoaded', () => {
-  // --- 1. Dynamic File Tree Explorer ---
-  const treeContainer = document.getElementById('file-tree');
-  const searchInput = document.getElementById('tree-search');
-
-  if (treeContainer && typeof sitePages !== 'undefined') {
-    const currentUrl = window.location.pathname;
-
-    function buildTree(pages) {
-      const root = { folders: {}, files: [] };
-      pages.forEach(page => {
-        if (!page.path || page.path === 'index.md') return;
-        const parts = page.path.split('/');
-        let current = root;
-        for (let i = 0; i < parts.length - 1; i++) {
-          const folderName = parts[i];
-          if (!current.folders[folderName]) {
-            current.folders[folderName] = { folders: {}, files: [] };
-          }
-          current = current.folders[folderName];
-        }
-        current.files.push(page);
-      });
-      return root;
-    }
-
-    function renderTree(node, container, pathPrefix = '') {
-      const ul = document.createElement('ul');
-      ul.className = 'tree-list';
-
-      // Render Folders
-      Object.keys(node.folders).sort().forEach(folderName => {
-        const li = document.createElement('li');
-        li.className = 'tree-item';
-
-        const folderDiv = document.createElement('div');
-        folderDiv.className = 'tree-folder';
-        folderDiv.innerHTML = \`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="folder-icon"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> \${folderName}\`;
-
-        const subContainer = document.createElement('ul');
-        subContainer.className = 'tree-folder-contents';
-        subContainer.style.display = 'none'; // Collapsed by default
-
-        folderDiv.addEventListener('click', () => {
-          const isCollapsed = subContainer.style.display === 'none';
-          subContainer.style.display = isCollapsed ? 'block' : 'none';
-        });
-
-        li.appendChild(folderDiv);
-        renderTree(node.folders[folderName], subContainer, pathPrefix + folderName + '/');
-        li.appendChild(subContainer);
-        ul.appendChild(li);
-
-        // Auto-expand folder if it contains the current page
-        if (currentUrl.includes(pathPrefix + folderName + '/')) {
-          subContainer.style.display = 'block';
-        }
-      });
-
-      // Render Files
-      node.files.sort((a,b) => a.title.localeCompare(b.title)).forEach(page => {
-        const li = document.createElement('li');
-        li.className = 'tree-item';
-
-        const a = document.createElement('a');
-        a.className = 'tree-file-link';
-        a.href = page.url;
-        a.textContent = page.title;
-
-        // Active link highlight
-        const normalizedCurrent = currentUrl.replace(/\\\\/g, '/').replace(/index\\.html$/, '').replace(/\\/$/, '');
-        const normalizedPage = page.url.replace(/\\\\/g, '/').replace(/index\\.html$/, '').replace(/\\/$/, '');
-        if (normalizedCurrent === normalizedPage) {
-          a.className += ' active';
-          // Bubble expand parents
-          let parent = li.parentElement;
-          while (parent && parent.className === 'tree-folder-contents') {
-            parent.style.display = 'block';
-            parent = parent.parentElement?.parentElement;
-          }
-        }
-
-        li.appendChild(a);
-        ul.appendChild(li);
-      });
-
-      container.appendChild(ul);
-    }
-
-    const treeData = buildTree(sitePages);
-    renderTree(treeData, treeContainer);
-
-    // Search Filtering
-    if (searchInput) {
-      searchInput.addEventListener('input', (e) => {
-        const query = e.target.value.toLowerCase().trim();
-        const items = treeContainer.querySelectorAll('.tree-item');
-
-        items.forEach(item => {
-          const fileLink = item.querySelector('.tree-file-link');
-          const folderDiv = item.querySelector('.tree-folder');
-
-          if (fileLink) {
-            const text = fileLink.textContent.toLowerCase();
-            if (text.includes(query)) {
-              item.style.display = 'block';
-              // Expand all parent folders
-              let parent = item.parentElement;
-              while (parent && parent.className === 'tree-folder-contents') {
-                parent.style.display = 'block';
-                parent = parent.parentElement?.parentElement;
-              }
-            } else {
-              item.style.display = 'none';
-            }
-          }
-
-          if (folderDiv && query === '') {
-            // Restore collapsed folders if search cleared
-            const contents = item.querySelector('.tree-folder-contents');
-            if (contents && !currentUrl.includes(folderDiv.textContent.trim())) {
-              contents.style.display = 'none';
-            }
-          }
-        });
-      });
-    }
-  }
-
-  // --- 2. Dynamic Table of Contents (Right Sidebar) ---
-  const mainContent = document.querySelector('main');
-  const tocContainer = document.getElementById('toc-content');
-
-  if (mainContent && tocContainer) {
-    const headers = mainContent.querySelectorAll('h1, h2, h3');
-    if (headers.length > 0) {
-      const tocUl = document.createElement('div');
-
-      headers.forEach((header, index) => {
-        if (!header.id) {
-          header.id = 'header-' + index;
-        }
-
-        const a = document.createElement('a');
-        a.className = 'toc-link';
-        a.href = '#' + header.id;
-        a.textContent = header.textContent;
-        const level = parseInt(header.tagName.substring(1));
-        a.style.paddingLeft = \`\${(level - 1) * 12}px\`;
-
-        tocUl.appendChild(a);
-      });
-      tocContainer.appendChild(tocUl);
-
-      // --- 3. ScrollSpy Functionality ---
-      const tocLinks = tocContainer.querySelectorAll('.toc-link');
-      const observerOptions = {
-        root: null,
-        rootMargin: '0px 0px -60% 0px',
-        threshold: 0
-      };
-
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            const activeId = entry.target.id;
-            tocLinks.forEach(link => {
-              if (link.getAttribute('href') === '#' + activeId) {
-                link.classList.add('active');
-              } else {
-                link.classList.remove('active');
-              }
-            });
-          }
-        });
-      }, observerOptions);
-
-      headers.forEach(header => observer.observe(header));
-    } else {
-      const rightSidebar = document.querySelector('.sidebar-right');
-      if (rightSidebar) rightSidebar.style.display = 'none';
-    }
-  }
-});
-`;
+var app_default = "document.addEventListener('DOMContentLoaded', () => {\n  // --- 1. Dynamic File Tree Explorer ---\n  const treeContainer = document.getElementById('file-tree');\n  const searchInput = document.getElementById('tree-search');\n\n  if (treeContainer && typeof sitePages !== 'undefined' && Array.isArray(sitePages)) {\n    const currentUrl = window.location.pathname;\n\n    function buildTree(pages) {\n      const root = { folders: {}, files: [] };\n      pages.forEach(page => {\n        if (!page || typeof page.path !== 'string' || page.path === 'index.md') return;\n        const parts = page.path.split('/');\n        let current = root;\n        for (let i = 0; i < parts.length - 1; i++) {\n          const folderName = parts[i];\n          if (!current.folders[folderName]) {\n            current.folders[folderName] = { folders: {}, files: [] };\n          }\n          current = current.folders[folderName];\n        }\n        current.files.push(page);\n      });\n      return root;\n    }\n\n    function createFolderIcon() {\n      const svgNS = 'http://www.w3.org/2000/svg';\n      const svg = document.createElementNS(svgNS, 'svg');\n      svg.setAttribute('width', '14');\n      svg.setAttribute('height', '14');\n      svg.setAttribute('viewBox', '0 0 24 24');\n      svg.setAttribute('fill', 'none');\n      svg.setAttribute('stroke', 'currentColor');\n      svg.setAttribute('stroke-width', '2');\n      svg.setAttribute('stroke-linecap', 'round');\n      svg.setAttribute('stroke-linejoin', 'round');\n      svg.classList.add('folder-icon');\n\n      const path = document.createElementNS(svgNS, 'path');\n      path.setAttribute('d', 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z');\n      svg.appendChild(path);\n      return svg;\n    }\n\n    function renderTree(node, container, pathPrefix = '') {\n      const ul = document.createElement('ul');\n      ul.className = 'tree-list';\n\n      // Render Folders\n      Object.keys(node.folders).sort().forEach(folderName => {\n        const li = document.createElement('li');\n        li.className = 'tree-item';\n\n        const folderDiv = document.createElement('div');\n        folderDiv.className = 'tree-folder';\n        folderDiv.appendChild(createFolderIcon());\n        folderDiv.appendChild(document.createTextNode(' ' + folderName));\n\n        const subContainer = document.createElement('ul');\n        subContainer.className = 'tree-folder-contents is-collapsed'; // Collapsed by default\n\n        folderDiv.addEventListener('click', () => {\n          subContainer.classList.toggle('is-collapsed');\n          subContainer.classList.toggle('is-expanded');\n        });\n\n        li.appendChild(folderDiv);\n        const childFolder = node.folders[folderName];\n        if (childFolder) {\n          renderTree(childFolder, subContainer, pathPrefix + folderName + '/');\n        }\n        li.appendChild(subContainer);\n        ul.appendChild(li);\n\n        // Auto-expand folder if it contains the current page\n        if (currentUrl.includes(pathPrefix + folderName + '/')) {\n          subContainer.classList.remove('is-collapsed');\n          subContainer.classList.add('is-expanded');\n        }\n      });\n\n      // Render Files\n      node.files.slice().sort((a, b) => {\n        const titleA = (a && typeof a.title === 'string') ? a.title : '';\n        const titleB = (b && typeof b.title === 'string') ? b.title : '';\n        return titleA.localeCompare(titleB);\n      }).forEach(page => {\n        if (!page || typeof page.url !== 'string' || typeof page.title !== 'string') return;\n        const li = document.createElement('li');\n        li.className = 'tree-item';\n\n        const a = document.createElement('a');\n        a.className = 'tree-file-link';\n        a.href = page.url;\n        a.textContent = page.title;\n\n        // Active link highlight\n        const normalizedCurrent = currentUrl.replace(/\\\\/g, '/').replace(/index\\.html$/, '').replace(/\\/$/, '');\n        const normalizedPage = page.url.replace(/\\\\/g, '/').replace(/index\\.html$/, '').replace(/\\/$/, '');\n        if (normalizedCurrent === normalizedPage) {\n          a.classList.add('active');\n          // Bubble expand parents\n          let parent = li.parentElement;\n          while (parent && parent.classList.contains('tree-folder-contents')) {\n            parent.classList.remove('is-collapsed');\n            parent.classList.add('is-expanded');\n            parent = parent.parentElement ? parent.parentElement.parentElement : null;\n          }\n        }\n\n        li.appendChild(a);\n        ul.appendChild(li);\n      });\n\n      container.appendChild(ul);\n    }\n\n    const treeData = buildTree(sitePages);\n    renderTree(treeData, treeContainer);\n\n    // Search Filtering\n    if (searchInput) {\n      searchInput.addEventListener('input', (e) => {\n        const target = e.target;\n        const query = (target && typeof target.value === 'string') ? target.value.toLowerCase().trim() : '';\n        const items = treeContainer.querySelectorAll('.tree-item');\n\n        items.forEach(item => {\n          const fileLink = item.querySelector('.tree-file-link');\n          const folderDiv = item.querySelector('.tree-folder');\n\n          if (fileLink) {\n            const text = (fileLink.textContent || '').toLowerCase();\n            if (text.includes(query)) {\n              item.classList.remove('is-hidden');\n              // Expand all parent folders\n              let parent = item.parentElement;\n              while (parent && parent.classList.contains('tree-folder-contents')) {\n                parent.classList.remove('is-collapsed');\n                parent.classList.add('is-expanded');\n                parent = parent.parentElement ? parent.parentElement.parentElement : null;\n              }\n            } else {\n              item.classList.add('is-hidden');\n            }\n          }\n\n          if (folderDiv && query === '') {\n            // Restore collapsed folders if search cleared\n            const contents = item.querySelector('.tree-folder-contents');\n            const folderTitle = (folderDiv.textContent || '').trim();\n            if (contents && !currentUrl.includes(folderTitle)) {\n              contents.classList.remove('is-expanded');\n              contents.classList.add('is-collapsed');\n            }\n          }\n        });\n      });\n    }\n  }\n\n  // --- 2. Dynamic Table of Contents (Right Sidebar) ---\n  const mainContent = document.querySelector('main');\n  const tocContainer = document.getElementById('toc-content');\n\n  if (mainContent && tocContainer) {\n    const headers = mainContent.querySelectorAll('h1, h2, h3');\n    if (headers.length > 0) {\n      const tocUl = document.createElement('div');\n\n      headers.forEach((header, index) => {\n        if (!header.id) {\n          header.id = 'header-' + index;\n        }\n\n        const a = document.createElement('a');\n        a.className = 'toc-link';\n        a.href = '#' + header.id;\n        a.textContent = header.textContent || '';\n        const level = parseInt(header.tagName.substring(1), 10);\n        a.setAttribute('data-level', String(level));\n\n        tocUl.appendChild(a);\n      });\n      tocContainer.appendChild(tocUl);\n\n      // --- 3. ScrollSpy Functionality ---\n      const tocLinks = tocContainer.querySelectorAll('.toc-link');\n      const observerOptions = {\n        root: null,\n        rootMargin: '0px 0px -60% 0px',\n        threshold: 0\n      };\n\n      const observer = new IntersectionObserver((entries) => {\n        entries.forEach(entry => {\n          if (entry.isIntersecting) {\n            const activeId = entry.target.id;\n            tocLinks.forEach(link => {\n              if (link.getAttribute('href') === '#' + activeId) {\n                link.classList.add('active');\n              } else {\n                link.classList.remove('active');\n              }\n            });\n          }\n        });\n      }, observerOptions);\n\n      headers.forEach(header => observer.observe(header));\n    } else {\n      const rightSidebar = document.querySelector('.sidebar-right');\n      if (rightSidebar) rightSidebar.classList.add('is-hidden');\n    }\n  }\n});\n";
 
 // templates/default.html
 var default_default = `<!DOCTYPE html>
@@ -438,6 +252,51 @@ var deploy_default = 'name: Deploy Jekyll site to Pages\n\non:\n  push:\n    bra
 
 // theme-service.ts
 var ThemeService = class {
+  getFallbackIndexContent() {
+    return `---
+layout: default
+title: "Welcome"
+---
+
+<div class="welcome-hero" style="padding: 40px 20px; text-align: center; background: linear-gradient(135deg, var(--badge-bg) 0%, transparent 100%); border-radius: 12px; margin-bottom: 40px; border: 1px solid var(--badge-border);">
+  <h2 style="font-size: 2.0rem; margin-top: 0; color: var(--primary-color);">\u{1F33F} {{ site.title }}</h2>
+  <p style="font-size: 1.1rem; opacity: 0.9; max-width: 600px; margin: 15px auto 0;">
+    Welcome to my public digital garden! This website is a dynamic, searchable compilation of public notes synced directly from my private Obsidian vault using the Publish on GitHub plugin.
+  </p>
+</div>
+
+### \u{1F50D} Navigating the Garden
+
+<div class="navigation-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 40px;">
+  <div class="nav-card" style="padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--content-bg);">
+    <h4 style="margin-top: 0; color: var(--primary-color);">\u{1F4C2} Interactive Explorer</h4>
+    <p style="font-size: 0.9rem; margin-bottom: 0; opacity: 0.8; line-height: 1.5;">
+      Use the left-hand sidebar to browse through folders and files. It automatically maps and preserves your Obsidian vault folder structures.
+    </p>
+  </div>
+  <div class="nav-card" style="padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--content-bg);">
+    <h4 style="margin-top: 0; color: var(--primary-color);">\u26A1 Instant Search</h4>
+    <p style="font-size: 0.9rem; margin-bottom: 0; opacity: 0.8; line-height: 1.5;">
+      Type anywhere in the left search input to instantly filter through note titles and find specific topics across your published notes.
+    </p>
+  </div>
+  <div class="nav-card" style="padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--content-bg);">
+    <h4 style="margin-top: 0; color: var(--primary-color);">\u{1F4CD} Table of Contents</h4>
+    <p style="font-size: 0.9rem; margin-bottom: 0; opacity: 0.8; line-height: 1.5;">
+      Heading tags on active notes populate the right-hand Table of Contents with a ScrollSpy outline to jump seamlessly across sections.
+    </p>
+  </div>
+</div>
+
+### \u{1F6E0}\uFE0F Publishing Your Own Notes
+
+Want to start sharing selective files from your Obsidian vault?
+1. Open the **Publish on GitHub** settings inside Obsidian.
+2. Configure your publish tag (e.g. \`{{ site.publish_tag }}\`), repository path, and GitHub remote URL.
+3. Tag any note in your vault with your publish tag \`{{ site.publish_tag }}\` (inline or in frontmatter).
+4. Click the ribbon icon or run \`Publish Public Notes\` from the command palette. The plugin converts wikilinks and pushes automatically!
+`;
+  }
   // Initialize standard Jekyll theme layouts, CSS, site-data generator, and workflows from external templates
   async initializeJekyllTheme(repoPath, githubRepo, mainBranch, siteTitle, siteSubtitle, publishTag) {
     if (!repoPath) {
@@ -445,123 +304,37 @@ var ThemeService = class {
       return;
     }
     try {
-      await fs2.promises.mkdir(path2.join(repoPath, "_layouts"), { recursive: true });
-      await fs2.promises.mkdir(path2.join(repoPath, "_includes"), { recursive: true });
-      await fs2.promises.mkdir(path2.join(repoPath, "assets", "css"), { recursive: true });
-      await fs2.promises.mkdir(path2.join(repoPath, "assets", "js"), { recursive: true });
-      await fs2.promises.mkdir(path2.join(repoPath, ".github", "workflows"), { recursive: true });
+      await import_fs2.promises.mkdir(path2.join(repoPath, "_layouts"), { recursive: true });
+      await import_fs2.promises.mkdir(path2.join(repoPath, "_includes"), { recursive: true });
+      await import_fs2.promises.mkdir(path2.join(repoPath, "assets", "css"), { recursive: true });
+      await import_fs2.promises.mkdir(path2.join(repoPath, "assets", "js"), { recursive: true });
+      await import_fs2.promises.mkdir(path2.join(repoPath, ".github", "workflows"), { recursive: true });
       const configContent = config_default.replace("${GITHUB_REPO}", githubRepo || "username/repo").replace("${SITE_TITLE}", siteTitle || "My Public Notes").replace("${SITE_SUBTITLE}", siteSubtitle || "Digital Garden").replace("${PUBLISH_TAG}", publishTag || "#public");
-      await fs2.promises.writeFile(path2.join(repoPath, "_config.yml"), configContent, "utf8");
-      await fs2.promises.writeFile(path2.join(repoPath, "assets", "css", "style.css"), style_default, "utf8");
-      await fs2.promises.writeFile(path2.join(repoPath, "assets", "js", "site-data.js"), site_data_default, "utf8");
-      await fs2.promises.writeFile(path2.join(repoPath, "assets", "js", "app.js"), app_default, "utf8");
-      await fs2.promises.writeFile(path2.join(repoPath, "_layouts", "default.html"), default_default, "utf8");
+      await import_fs2.promises.writeFile(path2.join(repoPath, "_config.yml"), configContent, "utf8");
+      await import_fs2.promises.writeFile(path2.join(repoPath, "assets", "css", "style.css"), style_default, "utf8");
+      await import_fs2.promises.writeFile(path2.join(repoPath, "assets", "js", "site-data.js"), site_data_default, "utf8");
+      await import_fs2.promises.writeFile(path2.join(repoPath, "assets", "js", "app.js"), app_default, "utf8");
+      await import_fs2.promises.writeFile(path2.join(repoPath, "_layouts", "default.html"), default_default, "utf8");
       const workflowContent = deploy_default.replace("${MAIN_BRANCH}", mainBranch);
-      await fs2.promises.writeFile(
+      await import_fs2.promises.writeFile(
         path2.join(repoPath, ".github", "workflows", "deploy.yml"),
         workflowContent,
         "utf8"
       );
-      const indexContent = `---
-layout: default
-title: "Welcome"
----
-
-<div class="welcome-hero" style="padding: 40px 20px; text-align: center; background: linear-gradient(135deg, var(--badge-bg) 0%, transparent 100%); border-radius: 12px; margin-bottom: 40px; border: 1px solid var(--badge-border);">
-  <h2 style="font-size: 2.0rem; margin-top: 0; color: var(--primary-color);">\u{1F33F} {{ site.title }}</h2>
-  <p style="font-size: 1.1rem; opacity: 0.9; max-width: 600px; margin: 15px auto 0;">
-    Welcome to my public digital garden! This website is a dynamic, searchable compilation of public notes synced directly from my private Obsidian vault using the Publish on GitHub plugin.
-  </p>
-</div>
-
-### \u{1F50D} Navigating the Garden
-
-<div class="navigation-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 40px;">
-  <div class="nav-card" style="padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--content-bg);">
-    <h4 style="margin-top: 0; color: var(--primary-color);">\u{1F4C2} Interactive Explorer</h4>
-    <p style="font-size: 0.9rem; margin-bottom: 0; opacity: 0.8; line-height: 1.5;">
-      Use the left-hand sidebar to browse through folders and files. It automatically maps and preserves your Obsidian vault folder structures.
-    </p>
-  </div>
-  <div class="nav-card" style="padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--content-bg);">
-    <h4 style="margin-top: 0; color: var(--primary-color);">\u26A1 Instant Search</h4>
-    <p style="font-size: 0.9rem; margin-bottom: 0; opacity: 0.8; line-height: 1.5;">
-      Type anywhere in the left search input to instantly filter through note titles and find specific topics across your published notes.
-    </p>
-  </div>
-  <div class="nav-card" style="padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--content-bg);">
-    <h4 style="margin-top: 0; color: var(--primary-color);">\u{1F4CD} Table of Contents</h4>
-    <p style="font-size: 0.9rem; margin-bottom: 0; opacity: 0.8; line-height: 1.5;">
-      Heading tags on active notes populate the right-hand Table of Contents with a ScrollSpy outline to jump seamlessly across sections.
-    </p>
-  </div>
-</div>
-
-### \u{1F6E0}\uFE0F Publishing Your Own Notes
-
-Want to start sharing selective files from your Obsidian vault?
-1. Open the **Publish on GitHub** settings inside Obsidian.
-2. Configure your publish tag (e.g. \`{{ site.publish_tag }}\`), repository path, and GitHub remote URL.
-3. Tag any note in your vault with your publish tag \`{{ site.publish_tag }}\` (inline or in frontmatter).
-4. Click the ribbon icon or run \`Publish Public Notes\` from the command palette. The plugin converts wikilinks and pushes automatically!
-`;
-      if (!fs2.existsSync(path2.join(repoPath, "index.md"))) {
-        await fs2.promises.writeFile(path2.join(repoPath, "index.md"), indexContent, "utf8");
+      if (!(0, import_fs2.existsSync)(path2.join(repoPath, "index.md"))) {
+        await import_fs2.promises.writeFile(path2.join(repoPath, "index.md"), this.getFallbackIndexContent(), "utf8");
       }
       new LogNotice("Jekyll templates and GitHub workflow successfully initialized!");
     } catch (err) {
-      new LogNotice("Template Init Error: " + err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      new LogNotice("Template Init Error: " + message);
     }
   }
   // Dynamically re-create the fallback index.md if none was published from the vault
   async ensureFallbackIndex(repoPath) {
     const indexPath = path2.join(repoPath, "index.md");
-    if (!fs2.existsSync(indexPath)) {
-      const indexContent = `---
-layout: default
-title: "Welcome"
----
-
-<div class="welcome-hero" style="padding: 40px 20px; text-align: center; background: linear-gradient(135deg, var(--badge-bg) 0%, transparent 100%); border-radius: 12px; margin-bottom: 40px; border: 1px solid var(--badge-border);">
-  <h2 style="font-size: 2.0rem; margin-top: 0; color: var(--primary-color);">\u{1F33F} {{ site.title }}</h2>
-  <p style="font-size: 1.1rem; opacity: 0.9; max-width: 600px; margin: 15px auto 0;">
-    Welcome to my public digital garden! This website is a dynamic, searchable compilation of public notes synced directly from my private Obsidian vault using the Publish on GitHub plugin.
-  </p>
-</div>
-
-### \u{1F50D} Navigating the Garden
-
-<div class="navigation-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 40px;">
-  <div class="nav-card" style="padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--content-bg);">
-    <h4 style="margin-top: 0; color: var(--primary-color);">\u{1F4C2} Interactive Explorer</h4>
-    <p style="font-size: 0.9rem; margin-bottom: 0; opacity: 0.8; line-height: 1.5;">
-      Use the left-hand sidebar to browse through folders and files. It automatically maps and preserves your Obsidian vault folder structures.
-    </p>
-  </div>
-  <div class="nav-card" style="padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--content-bg);">
-    <h4 style="margin-top: 0; color: var(--primary-color);">\u26A1 Instant Search</h4>
-    <p style="font-size: 0.9rem; margin-bottom: 0; opacity: 0.8; line-height: 1.5;">
-      Type anywhere in the left search input to instantly filter through note titles and find specific topics across your published notes.
-    </p>
-  </div>
-  <div class="nav-card" style="padding: 20px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--content-bg);">
-    <h4 style="margin-top: 0; color: var(--primary-color);">\u{1F4CD} Table of Contents</h4>
-    <p style="font-size: 0.9rem; margin-bottom: 0; opacity: 0.8; line-height: 1.5;">
-      Heading tags on active notes populate the right-hand Table of Contents with a ScrollSpy outline to jump seamlessly across sections.
-    </p>
-  </div>
-</div>
-
-### \u{1F6E0}\uFE0F Publishing Your Own Notes
-
-Want to start sharing selective files from your Obsidian vault?
-1. Open the **Publish on GitHub** settings inside Obsidian.
-2. Configure your publish tag (e.g. \`{{ site.publish_tag }}\`), repository path, and GitHub remote URL.
-3. Tag any note in your vault with your publish tag \`{{ site.publish_tag }}\` (inline or in frontmatter).
-4. Click the ribbon icon or run \`Publish Public Notes\` from the command palette. The plugin converts wikilinks and pushes automatically!
-`;
-      await fs2.promises.writeFile(indexPath, indexContent, "utf8");
-      console.log("[GitSelectivePublisher] Dynamic fallback index.md generated successfully.");
+    if (!(0, import_fs2.existsSync)(indexPath)) {
+      await import_fs2.promises.writeFile(indexPath, this.getFallbackIndexContent(), "utf8");
     }
   }
 };
@@ -578,7 +351,6 @@ var DEFAULT_SETTINGS = {
   siteSubtitle: "Digital Garden"
 };
 var PublishPlugin = class extends import_obsidian2.Plugin {
-  settings;
   gitService;
   themeService;
   async onload() {
@@ -589,27 +361,34 @@ var PublishPlugin = class extends import_obsidian2.Plugin {
     }));
     this.themeService = new ThemeService();
     this.addRibbonIcon("share-2", "Publish Public Notes", () => {
-      this.publishNotes();
+      void this.publishNotes();
     });
     this.addCommand({
       id: "publish-public-notes",
       name: "Publish Public Notes",
-      callback: () => this.publishNotes()
+      callback: () => {
+        void this.publishNotes();
+      }
     });
     this.addCommand({
       id: "initialize-jekyll-site",
       name: "Initialize Jekyll Theme Templates",
-      callback: () => this.initializeJekyllTheme()
+      callback: () => {
+        void this.initializeJekyllTheme();
+      }
     });
     this.addCommand({
       id: "reset-local-repository",
       name: "Reset Local Git Repository",
-      callback: () => this.resetLocalRepo()
+      callback: () => {
+        void this.resetLocalRepo();
+      }
     });
     this.addSettingTab(new PublishSettingTab(this.app, this));
   }
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const loadedData = await this.loadData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, loadedData ?? {});
   }
   async saveSettings() {
     await this.saveData(this.settings);
@@ -641,43 +420,46 @@ var PublishPlugin = class extends import_obsidian2.Plugin {
       return;
     }
     try {
-      if (fs3.existsSync(repoPath)) {
+      if ((0, import_fs3.existsSync)(repoPath)) {
         new LogNotice("Wiping local directory...");
-        await fs3.promises.rm(repoPath, { recursive: true, force: true });
+        await import_fs3.promises.rm(repoPath, { recursive: true, force: true });
       }
-      const vaultPath = this.app.vault.adapter instanceof import_obsidian2.FileSystemAdapter ? this.app.vault.adapter.getBasePath() : "";
+      const adapter = this.app.vault.adapter;
+      const vaultPath = adapter instanceof import_obsidian2.FileSystemAdapter ? adapter.getBasePath() : "";
       const success = await this.gitService.checkAndInitGitRepo(repoPath, this.settings.remoteRepoUrl, vaultPath);
       if (success) {
         new LogNotice("Local Git repository wiped and re-initialized!");
         await this.initializeJekyllTheme();
       }
     } catch (err) {
-      new LogNotice("Reset Error: " + err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      new LogNotice("Reset Error: " + message);
     }
   }
   // Clean out previous markdown and asset files in the repo (preserving .git, layouts, configs)
   async clearOldFiles() {
     const repoPath = this.settings.localRepoPath;
-    if (!fs3.existsSync(repoPath))
+    if (!(0, import_fs3.existsSync)(repoPath))
       return;
-    const files = await fs3.promises.readdir(repoPath);
+    const files = await import_fs3.promises.readdir(repoPath);
     for (const file of files) {
       if (file === ".git" || file === ".github" || file === "_layouts" || file === "_includes" || file === "assets" || file === "_config.yml" || file === "Gemfile" || file === "Gemfile.lock" || file === "commit-msg.txt") {
         continue;
       }
       const fullPath = path3.join(repoPath, file);
-      const stat = await fs3.promises.stat(fullPath);
+      const stat = await import_fs3.promises.stat(fullPath);
       if (stat.isDirectory()) {
-        await fs3.promises.rm(fullPath, { recursive: true, force: true });
+        await import_fs3.promises.rm(fullPath, { recursive: true, force: true });
       } else {
-        await fs3.promises.rm(fullPath, { force: true });
+        await import_fs3.promises.rm(fullPath, { force: true });
       }
     }
   }
   // Principal function to gather public files, process wikilinks, handle assets, diff, commit and push
   async publishNotes() {
     const activeNotice = new LogNotice("Starting Publish Pipeline...", 0);
-    const vaultPath = this.app.vault.adapter instanceof import_obsidian2.FileSystemAdapter ? this.app.vault.adapter.getBasePath() : "";
+    const adapter = this.app.vault.adapter;
+    const vaultPath = adapter instanceof import_obsidian2.FileSystemAdapter ? adapter.getBasePath() : "";
     const isGitReady = await this.gitService.checkAndInitGitRepo(
       this.settings.localRepoPath,
       this.settings.remoteRepoUrl,
@@ -705,10 +487,11 @@ var PublishPlugin = class extends import_obsidian2.Plugin {
         }
       }
       if (!isPublic && cache?.frontmatter) {
-        const tagsProp = cache.frontmatter.tags || cache.frontmatter.tag;
+        const frontmatter = cache.frontmatter;
+        const tagsProp = frontmatter["tags"] ?? frontmatter["tag"];
         if (tagsProp) {
           if (Array.isArray(tagsProp)) {
-            if (tagsProp.some((t) => t === tagToFind.replace("#", "") || t === tagToFind)) {
+            if (tagsProp.some((t) => typeof t === "string" && (t === tagToFind.replace("#", "") || t === tagToFind))) {
               isPublic = true;
             }
           } else if (typeof tagsProp === "string") {
@@ -740,29 +523,29 @@ var PublishPlugin = class extends import_obsidian2.Plugin {
         const finalContent = this.convertLinksAndEmbeds(processedContent, file, publicFilesSet, brokenLinks, referencedAssets);
         const targetPath = path3.join(repoPath, file.path);
         const targetDir = path3.dirname(targetPath);
-        if (!fs3.existsSync(targetDir)) {
-          await fs3.promises.mkdir(targetDir, { recursive: true });
+        if (!(0, import_fs3.existsSync)(targetDir)) {
+          await import_fs3.promises.mkdir(targetDir, { recursive: true });
         }
-        await fs3.promises.writeFile(targetPath, finalContent, "utf8");
+        await import_fs3.promises.writeFile(targetPath, finalContent, "utf8");
       }
       if (referencedAssets.size > 0) {
         activeNotice.setMessage(`Syncing ${referencedAssets.size} images...`);
         const targetAssetsDir = path3.join(repoPath, "assets", "images");
-        if (!fs3.existsSync(targetAssetsDir)) {
-          await fs3.promises.mkdir(targetAssetsDir, { recursive: true });
+        if (!(0, import_fs3.existsSync)(targetAssetsDir)) {
+          await import_fs3.promises.mkdir(targetAssetsDir, { recursive: true });
         }
         const vaultAdapter = this.app.vault.adapter;
         if (vaultAdapter instanceof import_obsidian2.FileSystemAdapter) {
           const basePath = vaultAdapter.getBasePath();
           for (const assetPath of referencedAssets) {
             const fullSourcePath = path3.join(basePath, assetPath);
-            if (fs3.existsSync(fullSourcePath)) {
-              const fileStat = await fs3.promises.stat(fullSourcePath);
+            if ((0, import_fs3.existsSync)(fullSourcePath)) {
+              const fileStat = await import_fs3.promises.stat(fullSourcePath);
               if (fileStat.isFile()) {
                 const ext = path3.extname(assetPath);
                 const name = path3.basename(assetPath, ext);
                 const targetAssetPath = path3.join(targetAssetsDir, `${name}${ext}`);
-                await fs3.promises.copyFile(fullSourcePath, targetAssetPath);
+                await import_fs3.promises.copyFile(fullSourcePath, targetAssetPath);
               }
             }
           }
@@ -805,14 +588,15 @@ ${uniqueBroken.slice(0, 5).join("\n")}${uniqueBroken.length > 5 ? "\n...and more
       new LogNotice(`Successfully Published! Added: ${added.length}, Modified: ${modified.length}, Removed: ${deleted.length}`);
     } catch (err) {
       activeNotice.hide();
-      new LogNotice("Publish Failure: " + err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      new LogNotice("Publish Failure: " + message);
       console.error(err);
     }
   }
   // Standard Frontmatter extractor & badge pre-pender with automatic publish-tag stripping
   processFrontmatter(content, title) {
     let processed = content;
-    let frontmatter = {};
+    const frontmatter = {};
     const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
     if (match) {
       const rawYaml = match[1];
@@ -933,6 +717,50 @@ var PublishSettingTab = class extends import_obsidian2.PluginSettingTab {
     super(app, plugin);
     this.plugin = plugin;
   }
+  getSettingDefinitions() {
+    return [
+      {
+        name: "Publish tag",
+        desc: "Only notes with this tag in body or frontmatter will be published."
+      },
+      {
+        name: "Site title",
+        desc: "Title of your published website (e.g. My Public Notes)"
+      },
+      {
+        name: "Site subtitle",
+        desc: "Subtitle/brand of your published website (e.g. Digital Garden)"
+      },
+      {
+        name: "Local repository path",
+        desc: "Local directory where the Git clone lives. (Use an absolute Windows path if on Windows)"
+      },
+      {
+        name: "Remote Git URL",
+        desc: "Your target GitHub repository clone URL."
+      },
+      {
+        name: "Target branch",
+        desc: "Default branch to push files to (e.g. main or gh-pages)"
+      },
+      {
+        name: "GitHub repository path (optional)",
+        desc: "Format: username/repo (for content feedback links). Auto-parsed if blank."
+      },
+      {
+        name: "Run Git via WSL",
+        desc: "Toggle this ON if you want the plugin to delegate Git actions to WSL bash."
+      },
+      {
+        name: "Initialize Jekyll theme templates",
+        desc: "Generates index, layouts, styles, and workflows in the local repository."
+      },
+      {
+        name: "Reset local repository",
+        desc: "\u26A0\uFE0F WARNING: Deletes the entire local repository folder and performs a fresh clone and theme setup."
+      }
+    ];
+  }
   display() {
     const { containerEl } = this;
     containerEl.empty();
@@ -984,18 +812,18 @@ var PublishSettingTab = class extends import_obsidian2.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    containerEl.createEl("h3", { text: "Maintenance & Actions" });
+    new import_obsidian2.Setting(containerEl).setName("Maintenance & Actions").setHeading();
     new import_obsidian2.Setting(containerEl).setName("Initialize Jekyll theme templates").setDesc("Generates index, layouts, styles, and workflows in the local repository.").addButton((cb) => {
       cb.setButtonText("Initialize Theme");
       cb.onClick(() => {
-        this.plugin.initializeJekyllTheme();
+        void this.plugin.initializeJekyllTheme();
       });
     });
     new import_obsidian2.Setting(containerEl).setName("Reset local repository").setDesc("\u26A0\uFE0F WARNING: Deletes the entire local repository folder and performs a fresh clone and theme setup.").addButton((cb) => {
       cb.setButtonText("Reset Repo");
-      cb.setWarning(true);
+      cb.setDestructive();
       cb.onClick(() => {
-        this.plugin.resetLocalRepo();
+        void this.plugin.resetLocalRepo();
       });
     });
   }
