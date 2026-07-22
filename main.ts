@@ -517,7 +517,7 @@ export default class PublishPlugin extends Plugin {
 
       let relativePath = '';
       if (sourceDir === destDir) {
-        relativePath = `./${dest.basename}.md`;
+        relativePath = `./${dest.basename}.html`;
       } else {
         const sourceParts = sourceDir === '.' ? [] : sourceDir.split('/');
         const destParts = destDir === '.' ? [] : destDir.split('/');
@@ -541,7 +541,7 @@ export default class PublishPlugin extends Plugin {
           destSub += '/';
         }
 
-        relativePath = `${parents}${destSub}${dest.basename}.md`;
+        relativePath = `${parents}${destSub}${dest.basename}.html`;
       }
 
       return `[${label || dest.basename}](${encodeURI(relativePath)})`;
