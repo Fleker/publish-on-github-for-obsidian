@@ -2,6 +2,8 @@
 
 A premium Obsidian plugin that enables selective publishing of notes directly to a GitHub Pages-hosted Jekyll static site. It queries your vault, extracts notes tagged with `#public` (or a custom tag), converts Obsidian-specific wikilinks and images to relative Markdown pathways, builds stylish HTML property badges, validates links, and executes automated Git commits and pushes.
 
+**Example**: https://felker.dev/obsidian-knowledge/
+
 ## 🌟 Key Features
 
 - **Selective Syncing**: Only notes containing your specified tag (e.g., `#public`) in their body or frontmatter properties will be copied.
