@@ -89,3 +89,13 @@ After configuring your settings, go to any note you want.
 1. Go to the command palette. Initialize the project (first-time only)
 1. Publish the project
 1. The GitHub Action included in the project will automatically start building your website. It takes about a minute to be live.
+
+To hide a particular section of a note before publishing, you can wrap it in a defined callout block
+
+```markdown
+> [!private]
+> ### Private Rant / Notes
+> - Nested list item 1
+>   - Sub-bullet A
+```
+

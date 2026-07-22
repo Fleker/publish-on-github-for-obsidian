@@ -23,6 +23,9 @@ interface PublishSettings {
   githubRepo: string; // e.g. "username/repo"
   siteTitle: string;
   siteSubtitle: string;
+  stripObsidianComments: boolean;
+  stripPrivateCallouts: boolean;
+  privateCalloutTags: string;
 }
 
 const DEFAULT_SETTINGS: PublishSettings = {
@@ -33,7 +36,10 @@ const DEFAULT_SETTINGS: PublishSettings = {
   useWsl: false,
   githubRepo: '',
   siteTitle: 'My Public Notes',
-  siteSubtitle: 'Digital Garden'
+  siteSubtitle: 'Digital Garden',
+  stripObsidianComments: true,
+  stripPrivateCallouts: true,
+  privateCalloutTags: 'private, secret, salty'
 };
 
 export default class PublishPlugin extends Plugin {
@@ -174,6 +180,33 @@ export default class PublishPlugin extends Plugin {
     }
   }
 
+  // Strip private/salty sections (Obsidian comments %%...%% and Callouts > [!private])
+  stripPrivateSections(content: string): string {
+    let result = content;
+
+    // 1. Strip Obsidian Comments (%% ... %%)
+    if (this.settings.stripObsidianComments) {
+      result = result.replace(/%%[\s\S]*?%%/g, '');
+    }
+
+    // 2. Strip Private Callouts (> [!private] ...)
+    if (this.settings.stripPrivateCallouts && this.settings.privateCalloutTags.trim()) {
+      const tags = this.settings.privateCalloutTags
+        .split(',')
+        .map(t => t.trim().replace(/^#/, '').toLowerCase())
+        .filter(Boolean);
+
+      if (tags.length > 0) {
+        const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const pattern = tags.map(escapeRegExp).join('|');
+        const calloutRegex = new RegExp(`^\\s*>\\s*\\[!(${pattern})\\][^\\n]*\\n(?:\\s*>[^\\n]*\\n?)*`, 'gim');
+        result = result.replace(calloutRegex, '');
+      }
+    }
+
+    return result;
+  }
+
   // Principal function to gather public files, process wikilinks, handle assets, diff, commit and push
   async publishNotes(): Promise<void> {
     const activeNotice = new Notice("Starting Publish Pipeline...", 0);
@@ -257,8 +290,11 @@ export default class PublishPlugin extends Plugin {
       for (const file of publicTFiles) {
         const rawContent = await this.app.vault.read(file);
 
+        // Strip private/salty sections (comments & callouts) before frontmatter processing
+        const sanitizedContent = this.stripPrivateSections(rawContent);
+
         // Process Frontmatter and render HTML badges
-        const { processedContent } = this.processFrontmatter(rawContent, file.basename);
+        const { processedContent } = this.processFrontmatter(sanitizedContent, file.basename);
 
         // Convert Wikilinks and track embedded images
         const finalContent = this.convertLinksAndEmbeds(processedContent, file, publicFilesSet, brokenLinks, referencedAssets);
@@ -559,6 +595,18 @@ class PublishSettingTab extends PluginSettingTab {
         desc: 'Toggle this ON if you want the plugin to delegate Git actions to WSL bash.',
       },
       {
+        name: 'Strip Obsidian comments (%%...%%)',
+        desc: 'Remove all %% Obsidian comments %% before publishing notes.',
+      },
+      {
+        name: 'Strip private callout blocks',
+        desc: 'Remove callout blocks tagged with private tags (e.g. > [!private]).',
+      },
+      {
+        name: 'Private callout tags',
+        desc: 'Comma-separated list of callout tags to exclude from publishing.',
+      },
+      {
         name: 'Initialize Jekyll theme templates',
         desc: 'Generates index, layouts, styles, and workflows in the local repository.',
       },
@@ -672,6 +720,47 @@ class PublishSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.useWsl)
           .onChange(async value => {
             this.plugin.settings.useWsl = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Content Filtering & Privacy')
+      .setHeading();
+
+    new Setting(containerEl)
+      .setName('Strip Obsidian comments (%%...%%)')
+      .setDesc('Remove all %% Obsidian comments %% before publishing notes.')
+      .addToggle(toggle =>
+        toggle
+          .setValue(this.plugin.settings.stripObsidianComments)
+          .onChange(async value => {
+            this.plugin.settings.stripObsidianComments = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Strip private callout blocks')
+      .setDesc('Remove callout blocks tagged with private tags (e.g. > [!private]).')
+      .addToggle(toggle =>
+        toggle
+          .setValue(this.plugin.settings.stripPrivateCallouts)
+          .onChange(async value => {
+            this.plugin.settings.stripPrivateCallouts = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Private callout tags')
+      .setDesc('Comma-separated list of callout tags to exclude from publishing.')
+      .addText(text =>
+        text
+          .setPlaceholder('private, secret, salty')
+          .setValue(this.plugin.settings.privateCalloutTags)
+          .onChange(async value => {
+            this.plugin.settings.privateCalloutTags = value;
             await this.plugin.saveSettings();
           })
       );
