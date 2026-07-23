@@ -26,6 +26,7 @@ interface PublishSettings {
   stripObsidianComments: boolean;
   stripPrivateCallouts: boolean;
   privateCalloutTags: string;
+  enableBacklinks: boolean;
 }
 
 const DEFAULT_SETTINGS: PublishSettings = {
@@ -39,7 +40,8 @@ const DEFAULT_SETTINGS: PublishSettings = {
   siteSubtitle: 'Digital Garden',
   stripObsidianComments: true,
   stripPrivateCallouts: true,
-  privateCalloutTags: 'private, secret, salty'
+  privateCalloutTags: 'private, secret, salty',
+  enableBacklinks: true
 };
 
 export default class PublishPlugin extends Plugin {
@@ -207,6 +209,43 @@ export default class PublishPlugin extends Plugin {
     return result;
   }
 
+  // Helper to generate styled HTML for incoming backlinks using .html relative web links
+  generateBacklinksHtml(targetFile: TFile, sourceFiles: TFile[]): string {
+    if (!sourceFiles || sourceFiles.length === 0) return '';
+
+    const itemsHtml = sourceFiles.map(src => {
+      const sourceDir = path.dirname(targetFile.path);
+      const srcDir = path.dirname(src.path);
+
+      let relativePath = '';
+      if (sourceDir === srcDir) {
+        relativePath = `./${src.basename}.html`;
+      } else {
+        const sourceParts = sourceDir === '.' ? [] : sourceDir.split('/');
+        const srcParts = srcDir === '.' ? [] : srcDir.split('/');
+        let commonCount = 0;
+        while (
+          commonCount < sourceParts.length &&
+          commonCount < srcParts.length &&
+          sourceParts[commonCount] === srcParts[commonCount]
+        ) {
+          commonCount++;
+        }
+        let parents = '';
+        for (let i = commonCount; i < sourceParts.length; i++) {
+          parents += '../';
+        }
+        let destSub = srcParts.slice(commonCount).join('/');
+        if (destSub) destSub += '/';
+        relativePath = `${parents}${destSub}${src.basename}.html`;
+      }
+
+      return `    <li class="backlink-item-wrap"><a href="${encodeURI(relativePath)}" class="backlink-item">📄 ${src.basename}</a></li>`;
+    }).join('\n');
+
+    return `\n\n<div class="backlinks-section">\n  <h4 class="backlinks-title">🔗 Linked References (${sourceFiles.length})</h4>\n  <ul class="backlinks-list">\n${itemsHtml}\n  </ul>\n</div>\n`;
+  }
+
   // Principal function to gather public files, process wikilinks, handle assets, diff, commit and push
   async publishNotes(): Promise<void> {
     const activeNotice = new Notice("Starting Publish Pipeline...", 0);
@@ -285,8 +324,10 @@ export default class PublishPlugin extends Plugin {
 
       const brokenLinks: { source: string; target: string }[] = [];
       const referencedAssets = new Set<string>();
+      const fileContentMap = new Map<string, string>();
+      const backlinksMap = new Map<string, Set<TFile>>();
 
-      // Read and process each public file
+      // Pass 1: Read, sanitize, convert links, and populate backlinksMap
       for (const file of publicTFiles) {
         const rawContent = await this.app.vault.read(file);
 
@@ -296,10 +337,30 @@ export default class PublishPlugin extends Plugin {
         // Process Frontmatter and render HTML badges
         const { processedContent } = this.processFrontmatter(sanitizedContent, file.basename);
 
-        // Convert Wikilinks and track embedded images
-        const finalContent = this.convertLinksAndEmbeds(processedContent, file, publicFilesSet, brokenLinks, referencedAssets);
+        // Convert Wikilinks, track embedded images, and populate backlinksMap
+        const finalContent = this.convertLinksAndEmbeds(
+          processedContent,
+          file,
+          publicFilesSet,
+          brokenLinks,
+          referencedAssets,
+          backlinksMap
+        );
 
-        // Write to target repository preserving path tree
+        fileContentMap.set(file.path, finalContent);
+      }
+
+      // Pass 2: Append backlinks (if enabled) and write to target repository
+      for (const file of publicTFiles) {
+        let finalContent = fileContentMap.get(file.path) || '';
+
+        if (this.settings.enableBacklinks) {
+          const incoming = backlinksMap.get(file.path);
+          if (incoming && incoming.size > 0) {
+            finalContent += this.generateBacklinksHtml(file, Array.from(incoming));
+          }
+        }
+
         const targetPath = path.join(repoPath, file.path);
         const targetDir = path.dirname(targetPath);
 
@@ -480,7 +541,8 @@ export default class PublishPlugin extends Plugin {
     sourceFile: TFile,
     publicFiles: Set<string>,
     brokenLinks: { source: string; target: string }[],
-    referencedAssets: Set<string>
+    referencedAssets: Set<string>,
+    backlinksMap?: Map<string, Set<TFile>>
   ): string {
     // 1. Convert embeds (e.g. images)
     let processed = content.replace(/!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match: string, linkpath: string, label: string | undefined) => {
@@ -510,6 +572,14 @@ export default class PublishPlugin extends Plugin {
       if (!publicFiles.has(dest.path)) {
         brokenLinks.push({ source: sourceFile.path, target: dest.path });
         return `<span class="private-link" title="This page is private" style="color: #94a3b8; cursor: not-allowed; text-decoration: dashed underline;">${label || dest.basename}</span>`;
+      }
+
+      // Record incoming backlink from sourceFile to dest
+      if (backlinksMap) {
+        if (!backlinksMap.has(dest.path)) {
+          backlinksMap.set(dest.path, new Set<TFile>());
+        }
+        backlinksMap.get(dest.path)!.add(sourceFile);
       }
 
       const sourceDir = path.dirname(sourceFile.path);
@@ -605,6 +675,10 @@ class PublishSettingTab extends PluginSettingTab {
       {
         name: 'Private callout tags',
         desc: 'Comma-separated list of callout tags to exclude from publishing.',
+      },
+      {
+        name: 'Enable Backlinks component',
+        desc: 'Add a Linked References section at the bottom of published public notes.',
       },
       {
         name: 'Initialize Jekyll theme templates',
@@ -766,6 +840,22 @@ class PublishSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName('Note Enhancements')
+      .setHeading();
+
+    new Setting(containerEl)
+      .setName('Enable Backlinks component')
+      .setDesc('Add a Linked References section at the bottom of published public notes.')
+      .addToggle(toggle =>
+        toggle
+          .setValue(this.plugin.settings.enableBacklinks)
+          .onChange(async value => {
+            this.plugin.settings.enableBacklinks = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
       .setName('Maintenance & Actions')
       .setHeading();
 
@@ -784,7 +874,7 @@ class PublishSettingTab extends PluginSettingTab {
       .setDesc('⚠️ WARNING: Deletes the entire local repository folder and performs a fresh clone and theme setup.')
       .addButton(cb => {
         cb.setButtonText("Reset Repo");
-        // cb.setDestructive();
+        cb.setDestructive();
         cb.onClick(() => {
           void this.plugin.resetLocalRepo();
         });

@@ -237,3 +237,43 @@ main {
     padding: 20px;
   }
 }
+
+/* Backlinks Component */
+.backlinks-section {
+  margin-top: 50px;
+  padding: 20px;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--badge-bg);
+  border-radius: 8px;
+}
+
+.backlinks-title {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 1rem;
+  color: var(--primary-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.backlinks-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.backlink-item-wrap {
+  margin: 6px 0;
+}
+
+.backlink-item {
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.backlink-item:hover {
+  color: var(--primary-color);
+  text-decoration: underline;
+}
+
