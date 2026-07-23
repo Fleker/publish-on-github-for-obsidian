@@ -86,6 +86,9 @@ header {
   background-color: var(--sidebar-bg);
   border-right: 1px solid var(--border-color);
   padding: 20px;
+  position: sticky;
+  top: var(--header-height);
+  height: calc(100vh - var(--header-height));
   overflow-y: auto;
   flex-shrink: 0;
 }
@@ -94,6 +97,9 @@ header {
   width: 280px;
   border-left: 1px solid var(--border-color);
   padding: 20px;
+  position: sticky;
+  top: var(--header-height);
+  height: calc(100vh - var(--header-height));
   overflow-y: auto;
   flex-shrink: 0;
 }
@@ -229,9 +235,11 @@ main {
   }
   .sidebar-left {
     width: 100%;
+    position: static;
+    height: auto;
+    max-height: 300px;
     border-right: none;
     border-bottom: 1px solid var(--border-color);
-    max-height: 300px;
   }
   main {
     padding: 20px;
