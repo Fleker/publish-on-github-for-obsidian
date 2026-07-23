@@ -874,7 +874,7 @@ class PublishSettingTab extends PluginSettingTab {
       .setDesc('⚠️ WARNING: Deletes the entire local repository folder and performs a fresh clone and theme setup.')
       .addButton(cb => {
         cb.setButtonText("Reset Repo");
-        cb.setDestructive();
+        // cb.setDestructive(); // This feature is not available in v1.12
         cb.onClick(() => {
           void this.plugin.resetLocalRepo();
         });
